@@ -1,0 +1,9 @@
+services:
+  telegram-gpt:
+    build: .
+    container_name: telegram-gpt
+    restart: unless-stopped
+    environment:
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      TELEGRAM_GPT_OPENAI_API_KEY: ${TELEGRAM_GPT_OPENAI_API_KEY}
+      TELEGRAM_GPT_TELEGRAM_TOKEN: ${TELEGRAM_GPT_TELEGRAM_TOKEN}
