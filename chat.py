@@ -119,7 +119,7 @@ class ChatManager:
     sent_message = await self.bot.send_message(chat_id=chat_id, text="Recognizing audio...", reply_to_message_id=user_message_id)
 
     try:
-      text = await self.__speech.speech_to_text(audio=audio)
+      text = await self.__speech.speech_to_text(audio=audio, message_id=f'{chat_id}_{user_message_id}')
     except Exception as e:
       await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message.id, text="Could not recognize audio")
       logging.warning(f"Could not recognize audio for chat {chat_id}: {e}")

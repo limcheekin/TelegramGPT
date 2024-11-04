@@ -92,27 +92,78 @@ if __name__ == "__main__":
     default=os.environ.get('TELEGRAM_GPT_AZURE_OPENAI_ENDPOINT'),
     help="Azure OpenAI Service endpoint. Set this option to use Azure OpenAI Service instead of OpenAI API."
   )
-
-  parser.add_argument(
-    '--azure-speech-key',
-    type=str,
-    default=os.environ.get('TELEGRAM_GPT_AZURE_SPEECH_KEY'),
-    help="Azure Speech Services API key. Set this option to enable voice messages powered by Azure speech-to-text and text-to-speech services.",
-  )
-  parser.add_argument(
-    '--azure-speech-region',
-    type=str,
-    default=os.environ.get('TELEGRAM_GPT_AZURE_SPEECH_REGION') or 'westus',
-    help="Azure Speech Services region. Default to be westus. Only valid when --azure-speech-key is set.",
-  )
   
+  parser.add_argument(
+    '--fast-whisper-api-base-url',
+    type=str,
+    default=os.environ.get('FAST_WHISPER_API_BASE_URL'),
+    help="Base URL of the FastWhisperAPI, for example http://127.0.0.1:8000",
+  )
+  parser.add_argument(
+    '--fast-whisper-api-model',
+    type=str,
+    default=os.environ.get('FAST_WHISPER_API_MODEL'),
+    help="Model supported by the FastWhisperAPI such as tiny.en, tiny, base.en, base, small.en, small, medium.en, medium, large-v1, large-v2, large-v3, large-v3-turbo, large, distil-large-v2, distil-medium.en, distil-small.en, distil-large-v3",
+  )
+  parser.add_argument(
+    '--fast-whisper-api-key',
+    type=str,
+    default=os.environ.get('FAST_WHISPER_API_KEY'),
+    help="API key of the FastWhisperAPI",
+  )
+  parser.add_argument(
+    '--language',
+    type=str,
+    default=os.environ.get('LANGUAGE'),
+    help="Language of the FastWhisperAPI and TTS",
+  )
+  parser.add_argument(
+    '--tts-base-url',
+    type=str,
+    default=os.environ.get('TTS_BASE_URL'),
+    help="Base URL of the TTS API, for example http://127.0.0.1:8000/v1",
+  )
+  parser.add_argument(
+    '--tts-api-key',
+    type=str,
+    default=os.environ.get('TTS_API_KEY'),
+    help="API key of the TTS API",
+  )
+  parser.add_argument(
+    '--tts-model',
+    type=str,
+    default=os.environ.get('TTS_MODEL'),
+    help="Model supported by the TTS API",
+  )
+  parser.add_argument(
+    '--tts-voice',
+    type=str,
+    default=os.environ.get('TTS_VOICE'),
+    help="Voice supported by the TTS API",
+  )
+  parser.add_argument(
+    '--tts-backend',
+    type=str,
+    default=os.environ.get('TTS_BACKEND'),
+    help="TTS backend supported by the LocalAI",
+  )
   args = parser.parse_args()
 
   gpt_options = GPTOptions(args.openai_api_key, args.openai_model_name, args.azure_openai_endpoint, args.max_message_count)
   logging.info(f"Initializing GPTClient with options: {gpt_options}")
   gpt = GPTClient(options=gpt_options)
 
-  speech = SpeechClient(args.azure_speech_key, args.azure_speech_region) if args.azure_speech_key is not None else None
+  speech = SpeechClient(
+            fastwhisperapi_base_url=args.fast_whisper_api_base_url,
+            fastwhisperapi_key=args.fast_whisper_api_key,
+            fastwhisperapi_model=args.fast_whisper_api_model,
+            checked_fastwhisperapi=True,
+            tts_base_url=args.tts_base_url,
+            tts_api_key=args.tts_api_key,
+            tts_model=args.tts_model,
+            tts_voice=args.tts_voice,
+            tts_backend=args.tts_backend,
+            language=args.language) if args.fast_whisper_api_base_url is not None and args.tts_base_url is not None else None
 
   webhook_options = WebhookOptions(args.webhook_url, args.webhook_listen_address) if args.webhook_url is not None else None
   bot_options = BotOptions(args.telegram_token, set(args.chat_id), args.conversation_timeout, args.data_dir, webhook_options)
