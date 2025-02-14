@@ -39,7 +39,7 @@ class SpeechClient:
           self.__checked_fastwhisperapi = True
 
   async def speech_to_text(self, audio: bytearray, message_id: str) -> str:
-    await self.check_fastwhisperapi()
+    # await self.check_fastwhisperapi()
     endpoint = f"{self.__fastwhisperapi_base_url}/v1/audio/transcriptions"
     client = OpenAI(api_key=self.__fastwhisperapi_key, base_url=f'{self.__fastwhisperapi_base_url}/v1')
     # Convert the bytearray to a BytesIO file-like object
@@ -52,6 +52,7 @@ class SpeechClient:
     )
     return response.text
 
+
   async def text_to_speech(self, text: str) -> bytes:
     client = OpenAI(api_key=self.__tts_api_key, base_url=self.__tts_base_url)
     response = client.audio.speech.create(
@@ -61,6 +62,28 @@ class SpeechClient:
                 extra_body={"backend": self.__tts_backend, "language": self.__language},
             )
     return response.read()
+  
+  """
+  The audio streaming is working but doesn't improve the usability and response time in Telegram
+  async def text_to_speech(self, text: str) -> bytes:
+      audio_buffer = BytesIO()
+
+      client = AsyncOpenAI(api_key=self.__tts_api_key, base_url=self.__tts_base_url)
+      
+      # Using an async context manager to create the streaming response.
+      async with client.audio.speech.with_streaming_response.create(
+          model=self.__tts_model,
+          voice=self.__tts_voice,
+          input=text,
+          extra_body={"backend": self.__tts_backend, "language": self.__language},
+      ) as response:
+          # Asynchronously iterate over chunks of audio data.
+          async for chunk in response.iter_bytes():
+              audio_buffer.write(chunk)
+    
+      # Return the collected bytes.
+      return audio_buffer.getvalue()
+  """
 
   async def close(self):
     await self.__session.close()

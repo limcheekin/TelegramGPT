@@ -362,13 +362,15 @@ class ChatManager:
     logging.info(f"Generating audio for chat {chat_id} for message \"{message.content}\"")
 
     try:
+      sent_message = await self.bot.send_message(chat_id=chat_id, text="Generating audio...", reply_to_message_id=message.id)
       speech_content = await self.__speech.text_to_speech(text=message.content)
     except Exception as e:
-      await self.bot.send_message(chat_id=chat_id, text="Could not generate audio", reply_to_message_id=message.id)
+      await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message.id, text="Could not generate audio")
       logging.warning(f"Could not generate audio for chat {chat_id}: {e}")
       return
-
-    await self.bot.send_voice(chat_id=chat_id, voice=speech_content, reply_to_message_id=message.id)
+    finally:
+      await self.bot.delete_message(chat_id=chat_id, message_id=sent_message.id)
+      await self.bot.send_voice(chat_id=chat_id, voice=speech_content, reply_to_message_id=message.id)
 
   def __add_timeout_task(self):
     chat_state = self.context.chat_state
