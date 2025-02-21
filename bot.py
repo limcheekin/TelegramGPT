@@ -4,7 +4,7 @@ import os
 from chat import ChatData, ChatManager, ChatState, ChatContext
 from dataclasses import dataclass, field
 from enum import Enum
-from gpt import GPTClient
+from gemini import GPTClient
 from speech import SpeechClient
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, ConversationHandler, PicklePersistence, filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler

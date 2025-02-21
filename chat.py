@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from gpt import GPTClient
+from gemini import GPTClient
 from models import AssistantMessage, Conversation, Role, SystemMessage, UserMessage
 from speech import SpeechClient
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup

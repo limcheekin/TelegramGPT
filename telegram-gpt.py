@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 from bot import BotOptions, WebhookOptions, run
-from gpt import GPTClient, GPTOptions
+from gemini import GPTClient, GPTOptions
 from speech import SpeechClient
 
 logging.basicConfig(
@@ -92,7 +92,18 @@ if __name__ == "__main__":
     default=os.environ.get('TELEGRAM_GPT_AZURE_OPENAI_ENDPOINT'),
     help="Azure OpenAI Service endpoint. Set this option to use Azure OpenAI Service instead of OpenAI API."
   )
-  
+  parser.add_argument(
+    '--system-message-file',
+    type=str,
+    default=os.environ.get('TELEGRAM_GPT_SYSTEM_MESSAGE_FILE'),
+    help="File specified system instructions for cached content"
+  )
+  parser.add_argument(
+    '--context-file',
+    type=str,
+    default=os.environ.get('TELEGRAM_GPT_CONTEXT_FILE'),
+    help="Context file for cached content"
+  )
   parser.add_argument(
     '--fast-whisper-api-base-url',
     type=str,
@@ -148,8 +159,14 @@ if __name__ == "__main__":
     help="TTS backend supported by the LocalAI",
   )
   args = parser.parse_args()
+  if args.system_message_file:
+    with open(args.system_message_file, "r", encoding="utf-8") as file:
+      system_message = file.read()
+  else:
+    system_message = ""
 
-  gpt_options = GPTOptions(args.openai_api_key, args.openai_model_name, args.azure_openai_endpoint, args.max_message_count)
+  gpt_options = GPTOptions(args.openai_api_key, args.openai_model_name, 
+                           args.max_message_count, system_message, args.context_file)
   logging.info(f"Initializing GPTClient with options: {gpt_options}")
   gpt = GPTClient(options=gpt_options)
 
