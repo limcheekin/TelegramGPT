@@ -5,7 +5,7 @@ from typing import AsyncGenerator, cast
 from google import genai
 from google.genai import types
 from models import AssistantMessage, Conversation, Message, SystemMessage, UserMessage
-from datetime import datetime
+from datetime import datetime, timezone
 
 @dataclass
 class GPTOptions:
@@ -111,7 +111,7 @@ class GPTClient:
         try:
             if self.__system_message and self.__file:
                 # Check cache content
-                current_time = datetime.now(datetime.timezone.utc)
+                current_time = datetime.now(timezone.utc)
                 cached_content_metadata = self.__client.caches.get(name=self.__cached_content.name)
                 logging.info(f"current_time {current_time}, cached_content_metadata.expire_time {cached_content_metadata.expire_time}")
                 if (current_time > cached_content_metadata.expire_time):
