@@ -319,21 +319,24 @@ class ChatManager:
       system_prompt = SystemMessage(self.context.current_mode.prompt) if self.context.current_mode else None
       final_message = None
 
-      last_update_task = None
-      last_update_time = asyncio.get_running_loop().time()
+      #last_update_task = None
+      #last_update_time = asyncio.get_running_loop().time()
 
       async for message in self.__gpt.complete(conversation, cast(UserMessage, conversation.last_message), sent_message_id, system_prompt):
         final_message = message
+        # gemini.py
+        await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=message.content + '\n\nGenerating...')  
+        
+        # gpt.py
+        #if last_update_task and not last_update_task.done():
+        #  continue
 
-        if last_update_task and not last_update_task.done():
-          continue
+        #now = asyncio.get_running_loop().time()
+        #if now - last_update_time < 2:
+        #  continue
 
-        now = asyncio.get_running_loop().time()
-        if now - last_update_time < 2:
-          continue
-
-        last_update_time = now
-        last_update_task = asyncio.create_task(self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=message.content + '\n\nGenerating...'))
+        #last_update_time = now
+        #last_update_task = asyncio.create_task(self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=message.content + '\n\nGenerating...'))
 
       if final_message:
         await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=final_message.content)
