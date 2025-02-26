@@ -36,7 +36,7 @@ class GPTClient:
             "contents": [document],
             "system_instruction": self.__system_message,
             # Uncomment the next line to set a custom TTL (e.g., "60s") for testing expiration.
-            # "ttl": "60s",
+            "ttl": "60s",
         }
 
         # Create an initial cache.
@@ -121,7 +121,13 @@ class GPTClient:
                         config=self.__cache_config,
                     )
                     logging.info(f"New cache created: {self.__cached_content.name}")
-                config = types.GenerateContentConfig(cached_content=self.__cached_content.name)
+                config = types.GenerateContentConfig(
+                    cached_content=self.__cached_content.name,
+                    max_output_tokens=1024,
+                    #top_k=2,
+                    #top_p=0.5,
+                    temperature=0.0,
+                )
             else:
                 config = types.GenerateContentConfig()    
             async for chunk in await self.__client.aio.models.generate_content_stream(
