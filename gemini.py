@@ -36,7 +36,7 @@ class GPTClient:
             "contents": [document],
             "system_instruction": self.__system_message,
             # Uncomment the next line to set a custom TTL (e.g., "60s") for testing expiration.
-            "ttl": "60s",
+            # "ttl": "60s",
         }
 
         # Create an initial cache.
@@ -110,17 +110,18 @@ class GPTClient:
     async def __stream(self, messages: list[Message]) -> AsyncGenerator[str, None]:
         try:
             if self.__system_message and self.__file:
-                # Check cache content
-                current_time = datetime.now(timezone.utc)
-                cached_content_metadata = self.__client.caches.get(name=self.__cached_content.name)
-                logging.info(f"current_time {current_time}, cached_content_metadata.expire_time {cached_content_metadata.expire_time}")
-                if (current_time > cached_content_metadata.expire_time):
-                    logging.info("\nCache expired. Re-creating cache...")
+                try:
+                    # Check cache content
+                    self.__client.caches.get(name=self.__cached_content.name)
+                except Exception as e:
+                    logging.warning(f"Error in checking cached content: {str(e)}")
+                    logging.info("Most likely cache expired. Re-creating cache...")
                     self.__cached_content = self.__client.caches.create(
                         model=self.__model_name,
                         config=self.__cache_config,
                     )
                     logging.info(f"New cache created: {self.__cached_content.name}")
+
                 config = types.GenerateContentConfig(
                     cached_content=self.__cached_content.name,
                     max_output_tokens=1024,
