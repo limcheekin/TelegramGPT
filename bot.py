@@ -12,6 +12,7 @@ from telegram.warnings import PTBUserWarning
 from typing import cast
 from uuid import uuid4
 from warnings import filterwarnings
+from db import Database
 
 async def __start(_: Update, chat_manager: ChatManager):
   chat_id = chat_manager.context.chat_id
@@ -198,7 +199,8 @@ class BotOptions:
   data_dir: str|None = None
   webhook: WebhookOptions|None = None
 
-def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dict[int, asyncio.Task], allowed_chat_ids: set[int], conversation_timeout: int|None, chat_states: dict[int, ChatState], callback):
+def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dict[int, asyncio.Task], allowed_chat_ids: set[int], 
+                      conversation_timeout: int|None, chat_states: dict[int, ChatState], callback, db: Database):
   async def invoke(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if chat_id not in chat_states:
       chat_states[chat_id] = ChatState()
@@ -207,7 +209,8 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
     chat_data = cast(ChatData, context.chat_data)
     chat_context = ChatContext(chat_id, chat_state, chat_data)
 
-    chat_manager = ChatManager(gpt=gpt, speech=speech, bot=context.bot, context=chat_context, conversation_timeout=conversation_timeout)
+    chat_manager = ChatManager(gpt=gpt, speech=speech, bot=context.bot, context=chat_context, 
+                               conversation_timeout=conversation_timeout, db=db)
 
     return await callback(update, chat_manager)
 
@@ -228,7 +231,7 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
         try:
           await current_task
         except Exception as e:
-          logging.warn(f"Error {e} in previous task for chat {chat_id}")
+          logging.warning(f"Error {e} in previous task for chat {chat_id}")
       return await invoke(update, context, chat_id)
 
     chat_tasks[chat_id] = asyncio.create_task(task())
@@ -243,9 +246,11 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
 def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptions):
   chat_tasks = {}
   chat_states = {}
+  db: Database = None
 
   def create_callback(callback):
-    return __create_callback(gpt, speech, chat_tasks, options.allowed_chat_ids, options.conversation_timeout, chat_states, callback)
+    return __create_callback(gpt, speech, chat_tasks, options.allowed_chat_ids, 
+                             options.conversation_timeout, chat_states, callback, db)
 
   async def post_init(app: Application):
     commands = [
@@ -257,15 +262,21 @@ def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptio
     ]
     await app.bot.set_my_commands(commands)
     logging.info("Set command list")
+    await db.init_db()
 
   async def post_shutdown(_: Application):
     if speech:
       await speech.close()
 
+  postgres_dsn = os.environ.get('POSTGRES_DSN')  # e.g., "postgresql+asyncpg://user:pass@host:port/dbname"
+  if not postgres_dsn:
+    raise Exception("POSTGRES_DSN environment variable must be set for PostgreSQL persistence")
+  db = Database(postgres_dsn)
+  
   app_builder = ApplicationBuilder().token(token).post_init(post_init).post_shutdown(post_shutdown)
-  if options.data_dir:
-    persistence = PicklePersistence(os.path.join(options.data_dir, 'data'))
-    app_builder.persistence(persistence)
+  #if options.data_dir:
+  #  persistence = PicklePersistence(os.path.join(options.data_dir, 'data'))
+  #  app_builder.persistence(persistence)
   app = app_builder.build()
 
   filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)

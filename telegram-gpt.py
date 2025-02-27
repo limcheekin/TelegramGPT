@@ -10,7 +10,7 @@ logging.basicConfig(
   level=logging.INFO,
 )
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
   def get_chat_ids_from_env():
     chat_ids = []
 

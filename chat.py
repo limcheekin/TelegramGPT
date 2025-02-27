@@ -10,6 +10,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ExtBot
 from typing import TypedDict, cast, final
 from uuid import uuid4
+from db import Database
+from datetime import datetime, timezone
 
 @dataclass
 class ConversationMode:
@@ -69,12 +71,14 @@ class ChatContext:
     self.__chat_data['current_mode_id'] = mode.id if mode else None
 
 class ChatManager:
-  def __init__(self, *, gpt: GPTClient, speech: SpeechClient|None, bot: ExtBot, context: ChatContext, conversation_timeout: int|None):
+  def __init__(self, *, gpt: GPTClient, speech: SpeechClient|None, bot: ExtBot, 
+               context: ChatContext, conversation_timeout: int|None, db: Database):
     self.__gpt = gpt
     self.__speech = speech
     self.bot = bot
     self.context = context
     self.__conversation_timeout = conversation_timeout
+    self.db = db
 
   async def new_conversation(self):
     chat_state = self.context.chat_state
@@ -95,6 +99,15 @@ class ChatManager:
 
     logging.info(f"Started a new conversation for chat {self.context.chat_id}")
 
+  async def __create_conversation(self, user_message: UserMessage) -> Conversation:
+      # Create a new conversation record in PostgreSQL.
+      db_conv = await self.db.create_conversation()
+      # Save the initial user message.
+      await self.db.add_message(db_conv.id, user_message.role, user_message.content, user_message.timestamp)
+      # Create an in-memory conversation representation.
+      conversation = Conversation(id=db_conv.id, title=None, started_at=user_message.timestamp, messages=[user_message])
+      return conversation
+    
   async def handle_message(self, *, text: str, user_message_id: int):
     sent_message = await self.bot.send_message(chat_id=self.context.chat_id, text="Generating response...")
 
@@ -103,8 +116,9 @@ class ChatManager:
     conversation = self.context.chat_state.current_conversation
     if conversation:
       conversation.messages.append(user_message)
+      await self.db.add_message(conversation.id, user_message.role, user_message.content, user_message.timestamp)
     else:
-      conversation = self.__create_conversation(user_message)
+      conversation = await self.__create_conversation(user_message)
 
     await self.__complete(conversation, sent_message.id)
 
@@ -316,32 +330,33 @@ class ChatManager:
   async def __complete(self, conversation: Conversation, sent_message_id: int):
     chat_id = self.context.chat_id
     try:
-      system_prompt = SystemMessage(self.context.current_mode.prompt) if self.context.current_mode else None
-      final_message = None
-
-      #last_update_task = None
-      #last_update_time = asyncio.get_running_loop().time()
-
-      async for message in self.__gpt.complete(conversation, cast(UserMessage, conversation.last_message), sent_message_id, system_prompt):
-        final_message = message
-        # gemini.py
-        await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=message.content + '\n\nGenerating...')  
-        
-        # gpt.py
-        #if last_update_task and not last_update_task.done():
-        #  continue
-
-        #now = asyncio.get_running_loop().time()
-        #if now - last_update_time < 2:
-        #  continue
-
-        #last_update_time = now
-        #last_update_task = asyncio.create_task(self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=message.content + '\n\nGenerating...'))
-
-      if final_message:
-        await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text=final_message.content)
-
-      logging.info(f"Replied chat {chat_id} with message '{final_message}'")
+      system_prompt = None
+      assistant_message = None
+      if self.context.current_mode:
+          system_prompt = SystemMessage(self.context.current_mode.prompt)
+      async for chunk in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
+          if not assistant_message:
+              assistant_message = AssistantMessage(sent_message_id, chunk, conversation.messages[-1].id)
+              conversation.messages.append(assistant_message)
+              # Insert the initial assistant message into the DB.
+              db_msg = await self.db.add_message(conversation.id, assistant_message.role, assistant_message.content, datetime.now(timezone.utc))
+              assistant_message.id = db_msg.id  # update in-memory ID to match DB record
+          else:
+              assistant_message.content += chunk
+              # Update the existing DB record incrementally.
+              await self.db.update_message(assistant_message.id, assistant_message.content)
+      await self.bot.edit_message_text(
+        chat_id=chat_id, 
+        message_id=sent_message_id, 
+        text=assistant_message.content + '\n\nGenerating...'
+      )
+      if assistant_message:
+          await self.bot.edit_message_text(
+              chat_id=chat_id, 
+              message_id=sent_message_id, 
+              text=assistant_message.content
+          )
+      logging.info(f"Replied chat {chat_id} with message '{assistant_message.content}'")
     except TimeoutError:
       retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
       await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Generation timed out.", reply_markup=retry_markup)
@@ -350,6 +365,7 @@ class ChatManager:
       retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
       await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Error generating response", reply_markup=retry_markup)
       logging.error(f"Error generating response for chat {chat_id}: {e}")
+      
     
     self.context.chat_state.current_conversation = conversation
 
@@ -413,14 +429,14 @@ class ChatManager:
 
     logging.info(f"Conversation {current_conversation.id} timed out")
 
-  def __create_conversation(self, user_message: UserMessage) -> Conversation:
-    current_conversation = self.context.chat_state.current_conversation
-    if current_conversation:
-      current_conversation.messages.append(user_message)
-      return current_conversation
-    else:
-      conversations = self.context.all_conversations
-      conversation = self.__gpt.new_conversation(len(conversations), user_message)
-      conversations[conversation.id] = conversation
-
-      return conversation
+#  def __create_conversation(self, user_message: UserMessage) -> Conversation:
+#    current_conversation = self.context.chat_state.current_conversation
+#    if current_conversation:
+#      current_conversation.messages.append(user_message)
+#      return current_conversation
+#    else:
+#      conversations = self.context.all_conversations
+#      conversation = self.__gpt.new_conversation(len(conversations), user_message)
+#      conversations[conversation.id] = conversation
+#
+#      return conversation

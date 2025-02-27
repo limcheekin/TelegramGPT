@@ -2,11 +2,11 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Optional, List, Literal
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship, selectinload
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship, joinedload
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey, 
-    func, select, update, Index, event
+    func, select, update, event
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.exc import SQLAlchemyError
@@ -82,7 +82,13 @@ class Database:
         async with self.SessionLocal() as session:
             try:
                 async with session.begin():
-                    conv = DBConversation(title=title)
+                    # For SQLite tests, set the timestamp explicitly
+                    now = datetime.now()
+                    conv = DBConversation(
+                        title=title,
+                        started_at=now,
+                        updated_at=now
+                    )
                     session.add(conv)
                 # Refresh to load server-generated values
                 await session.refresh(conv)
@@ -95,64 +101,103 @@ class Database:
         self, 
         conversation_id: int, 
         role: Literal['user', 'assistant', 'system'], 
-        content: str
+        content: str,
+        session: Optional[AsyncSession] = None
     ) -> DBMessage:
-        """Add a message with role validation and efficient updated_at update."""
-        async with self.SessionLocal() as session:
-            try:
-                # Validate role
-                if role not in {'user', 'assistant', 'system'}:
-                    raise ValueError(f"Invalid role: {role}")
+        """
+        Add a message with role validation and efficient updated_at update.
+        Optionally use an external session for transaction management.
+        """
+        close_session = session is None
+        session = session or self.SessionLocal()
+        
+        try:
+            # Validate role
+            if role not in {'user', 'assistant', 'system'}:
+                raise ValueError(f"Invalid role: {role}")
 
-                async with session.begin():
-                    msg = DBMessage(
-                        conversation_id=conversation_id,
-                        role=role,
-                        content=content
-                    )
-                    session.add(msg)
-                    # Update conversation's updated_at directly
-                    await session.execute(
-                        update(DBConversation)
-                        .where(DBConversation.id == conversation_id)
-                        .values(updated_at=func.now())
-                    )
+            if close_session:
+                await session.begin()
+                
+            msg = DBMessage(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                timestamp=datetime.now()
+            )
+            session.add(msg)
+            
+            # Update conversation's updated_at directly with explicit timestamp
+            await session.execute(
+                update(DBConversation)
+                .where(DBConversation.id == conversation_id)
+                .values(updated_at=datetime.now())
+            )
+            
+            if close_session:
+                await session.commit()
                 await session.refresh(msg)
-                return msg
-            except SQLAlchemyError as e:
-                logging.error("Database error adding message: %s", e)
-                raise
+            
+            return msg
+        except Exception as e:
+            if close_session and session.in_transaction():
+                await session.rollback()
+            logging.error("Database error adding message: %s", e)
+            raise
+        finally:
+            if close_session:
+                await session.close()
 
-    async def update_message(self, message_id: int, new_content: str) -> Optional[DBMessage]:
+    async def update_message(
+        self, 
+        message_id: int, 
+        new_content: str,
+        session: Optional[AsyncSession] = None
+    ) -> Optional[DBMessage]:
         """Update message content and conversation's updated_at."""
-        async with self.SessionLocal() as session:
-            try:
-                async with session.begin():
-                    msg = await session.get(DBMessage, message_id)
-                    if not msg:
-                        return None
-                    msg.content = new_content
-                    # Update conversation timestamp
-                    await session.execute(
-                        update(DBConversation)
-                        .where(DBConversation.id == msg.conversation_id)
-                        .values(updated_at=func.now())
-                    )
+        close_session = session is None
+        session = session or self.SessionLocal()
+        
+        try:
+            if close_session:
+                await session.begin()
+                
+            msg = await session.get(DBMessage, message_id)
+            if not msg:
+                return None
+                
+            msg.content = new_content
+            
+            # Update conversation timestamp with explicit timestamp
+            await session.execute(
+                update(DBConversation)
+                .where(DBConversation.id == msg.conversation_id)
+                .values(updated_at=datetime.now())
+            )
+            
+            if close_session:
+                await session.commit()
                 await session.refresh(msg)
-                return msg
-            except SQLAlchemyError as e:
-                logging.error("Database error updating message: %s", e)
-                raise
+                
+            return msg
+        except SQLAlchemyError as e:
+            if close_session and session.in_transaction():
+                await session.rollback()
+            logging.error("Database error updating message: %s", e)
+            raise
+        finally:
+            if close_session:
+                await session.close()
 
     async def get_conversation(self, conversation_id: int) -> Optional[DBConversation]:
-        """Get conversation with eager-loaded messages."""
         async with self.SessionLocal() as session:
             try:
-                result = await session.execute(
+                stmt = (
                     select(DBConversation)
-                    .options(selectinload(DBConversation.messages))
+                    .options(joinedload(DBConversation.messages))
                     .where(DBConversation.id == conversation_id)
                 )
+                result = await session.execute(stmt)
                 return result.scalar()
             except SQLAlchemyError as e:
                 logging.error("Database error getting conversation: %s", e)
@@ -163,12 +208,26 @@ class Database:
         skip: int = 0, 
         limit: Optional[int] = None,
         order_by: Literal['started_at', 'updated_at'] = 'started_at',
-        order_dir: Literal['asc', 'desc'] = 'desc'
+        order_dir: Literal['asc', 'desc'] = 'desc',
+        ids: Optional[List[int]] = None
     ) -> List[DBConversation]:
-        """List conversations with pagination and sorting."""
+        """
+        List conversations with pagination, sorting, and optional ID filtering.
+        
+        Args:
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            order_by: Field to sort by ('started_at' or 'updated_at')
+            order_dir: Sort direction ('asc' or 'desc')
+            ids: Optional list of conversation IDs to filter by
+            
+        Returns:
+            List of DBConversation objects
+        """
         skip = max(0, skip)
         if limit is not None:
             limit = max(0, limit)
+            
         async with self.SessionLocal() as session:
             try:
                 # Determine sort column and direction
@@ -176,12 +235,13 @@ class Database:
                 if order_dir == 'desc':
                     sort_column = sort_column.desc()
                 
-                query = (
-                    select(DBConversation)
-                    .order_by(sort_column)
-                    .offset(skip)
-                    .limit(limit)
-                )
+                query = select(DBConversation).order_by(sort_column)
+                
+                # Filter by IDs if provided
+                if ids:
+                    query = query.where(DBConversation.id.in_(ids))
+                    
+                query = query.offset(skip).limit(limit)
                 result = await session.execute(query)
                 return result.scalars().all()
             except SQLAlchemyError as e:
@@ -194,8 +254,15 @@ class Database:
         async with self.SessionLocal() as session:
             try:
                 async with session.begin():
-                    mode = DBConversationMode(title=title, prompt=prompt)
+                    # Ensure proper UUID handling
+                    mode = DBConversationMode(
+                        id=uuid.uuid4(),  # Explicitly generate UUID
+                        title=title, 
+                        prompt=prompt
+                    )
                     session.add(mode)
+                    await session.commit()
+                await session.refresh(mode)
                 return mode
             except SQLAlchemyError as e:
                 logging.error("Database error creating conversation mode: %s", e)

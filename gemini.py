@@ -5,7 +5,6 @@ from typing import AsyncGenerator, cast
 from google import genai
 from google.genai import types
 from models import AssistantMessage, Conversation, Message, SystemMessage, UserMessage
-from datetime import datetime, timezone
 
 @dataclass
 class GPTOptions:
