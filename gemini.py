@@ -64,7 +64,8 @@ class GPTClient:
 
             assistant_message.content += chunk
             yield assistant_message
-
+        
+        logging.info(f"len(conversation.messages): {len(conversation.messages)}")
         if conversation.title is None and len(conversation.messages) < 3:
             async def set_title(conversation: Conversation):
                 prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the begining or the end.'
@@ -73,7 +74,7 @@ class GPTClient:
 
                 logging.info(f"Set title for conversation {conversation}: '{title}'")
 
-            asyncio.create_task(set_title(conversation))
+            await set_title(conversation)
 
         logging.info(f"Completed message for chat {conversation.id}, message: '{assistant_message}'")
 

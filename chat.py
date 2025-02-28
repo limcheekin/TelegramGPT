@@ -11,7 +11,6 @@ from telegram.ext import ExtBot
 from typing import TypedDict, cast, final
 from uuid import uuid4
 from db import Database
-from datetime import datetime, timezone
 
 @dataclass
 class ConversationMode:
@@ -103,7 +102,7 @@ class ChatManager:
       # Create a new conversation record in PostgreSQL.
       db_conv = await self.db.create_conversation()
       # Save the initial user message.
-      await self.db.add_message(db_conv.id, user_message.role, user_message.content, user_message.timestamp)
+      await self.db.add_message(db_conv.id, user_message.role, user_message.content)
       # Create an in-memory conversation representation.
       conversation = Conversation(id=db_conv.id, title=None, started_at=user_message.timestamp, messages=[user_message])
       return conversation
@@ -116,7 +115,7 @@ class ChatManager:
     conversation = self.context.chat_state.current_conversation
     if conversation:
       conversation.messages.append(user_message)
-      await self.db.add_message(conversation.id, user_message.role, user_message.content, user_message.timestamp)
+      await self.db.add_message(conversation.id, user_message.role, user_message.content)
     else:
       conversation = await self.__create_conversation(user_message)
 
@@ -336,26 +335,27 @@ class ChatManager:
           system_prompt = SystemMessage(self.context.current_mode.prompt)
       async for chunk in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
           if not assistant_message:
-              assistant_message = AssistantMessage(sent_message_id, chunk, conversation.messages[-1].id)
-              conversation.messages.append(assistant_message)
+              assistant_message = AssistantMessage(sent_message_id, '', conversation.messages[-1].id)
               # Insert the initial assistant message into the DB.
-              db_msg = await self.db.add_message(conversation.id, assistant_message.role, assistant_message.content, datetime.now(timezone.utc))
+              db_msg = await self.db.add_message(conversation.id, assistant_message.role.value, assistant_message.content)
               assistant_message.id = db_msg.id  # update in-memory ID to match DB record
           else:
-              assistant_message.content += chunk
+              assistant_message.content = chunk.content
               # Update the existing DB record incrementally.
               await self.db.update_message(assistant_message.id, assistant_message.content)
-      await self.bot.edit_message_text(
-        chat_id=chat_id, 
-        message_id=sent_message_id, 
-        text=assistant_message.content + '\n\nGenerating...'
-      )
+          await self.bot.edit_message_text(
+            chat_id=chat_id, 
+            message_id=sent_message_id, 
+            text=assistant_message.content + '\n\nGenerating...'
+          )       
       if assistant_message:
           await self.bot.edit_message_text(
               chat_id=chat_id, 
               message_id=sent_message_id, 
               text=assistant_message.content
           )
+      if conversation.title:
+          await self.db.update_conversation(conversation.id, conversation.title)                  
       logging.info(f"Replied chat {chat_id} with message '{assistant_message.content}'")
     except TimeoutError:
       retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])

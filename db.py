@@ -97,6 +97,22 @@ class Database:
                 logging.error("Database error creating conversation: %s", e)
                 raise
 
+    async def update_conversation(self, conversation_id: int, title: str):
+        """Update conversation's title """
+        async with self.SessionLocal() as session:
+            try:
+                async with session.begin():
+                    await session.execute(
+                                    update(DBConversation)
+                                    .where(DBConversation.id == conversation_id)
+                                    .where(DBConversation.title == None)
+                                    .values(title=title)
+                                )
+                await session.commit()
+            except SQLAlchemyError as e:
+                logging.error("Database error creating conversation: %s", e)
+                raise
+
     async def add_message(
         self, 
         conversation_id: int, 
