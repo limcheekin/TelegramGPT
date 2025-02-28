@@ -29,7 +29,7 @@ async def cleanup(db):
         await tx.rollback()
 
 @pytest.mark.asyncio
-async def test_rollback_on_error(db):
+async def test_rollback_on_error(request, db):
     """Test transaction rollback on invalid operation"""
     conv = await db.create_conversation(CHAT_ID)
     initial_updated = conv.updated_at
@@ -39,8 +39,10 @@ async def test_rollback_on_error(db):
         try:
             async with session.begin():
                 # Valid message followed by invalid operation
-                await db.add_message(conv.id, "user", "valid", session=session)
-                await db.add_message(conv.id, "invalid_role", "test", session=session)
+                request.config.MESSAGE_ID += 1
+                await db.add_message(request.config.MESSAGE_ID, conv.id, "user", "valid", session=session)
+                request.config.MESSAGE_ID += 1
+                await db.add_message(request.config.MESSAGE_ID, conv.id, "invalid_role", "test", session=session)
         except ValueError:
             pass  # Exception is expected
     
@@ -103,10 +105,11 @@ async def test_ordering_of_conversations(db):
     assert convs[0].id == conv3.id
 
 @pytest.mark.asyncio
-async def test_eager_loading_queries(db):
+async def test_eager_loading_queries(request, db):
     """Verify eager loading doesn't make extra queries"""
     conv = await db.create_conversation(CHAT_ID)
-    await db.add_message(conv.id, "user", "Test")
+    request.config.MESSAGE_ID += 1
+    await db.add_message(request.config.MESSAGE_ID, conv.id, "user", "Test")
 
     # Count the number of queries executed
     query_count = 0
@@ -146,19 +149,21 @@ async def test_invalid_uuid_handling(db):
     assert "UUID" in str(exc_info.value) or "uuid" in str(exc_info.value) or "hex" in str(exc_info.value)
 
 @pytest.mark.asyncio
-async def test_max_content_length(db):
+async def test_max_content_length(request, db):
     """Test maximum content length handling (database-specific limit)"""
     # PostgreSQL TEXT type has no inherent length limit, but practical limits apply
     huge_content = "x" * 10_000_000  # 10MB
     conv = await db.create_conversation(CHAT_ID)
-    msg = await db.add_message(conv.id, "user", huge_content)
+    request.config.MESSAGE_ID += 1
+    msg = await db.add_message(request.config.MESSAGE_ID, conv.id, "user", huge_content)
     assert len(msg.content) == 10_000_000
 
 @pytest.mark.asyncio
-async def test_nonexistent_conversation_message(db):
+async def test_nonexistent_conversation_message(request, db):
     """Test adding message to non-existent conversation"""
     with pytest.raises(IntegrityError) as exc_info:
-        await db.add_message(99999, "user", "test")
+        request.config.MESSAGE_ID += 1
+        await db.add_message(request.config.MESSAGE_ID, 99999, "user", "test")
     assert "foreign key constraint" in str(exc_info.value).lower()
 
 @pytest.mark.asyncio
@@ -181,12 +186,13 @@ async def test_nonexistent_conversation_retrieval(db):
     assert result is None
 
 @pytest.mark.asyncio
-async def test_message_with_null_content(db):
+async def test_message_with_null_content(request, db):
     """Test database constraints for required fields"""
     conv = await db.create_conversation(CHAT_ID)
     with pytest.raises(IntegrityError):
         async with db.SessionLocal() as session:
             msg = DBMessage(
+                id=request.config.MESSAGE_ID,
                 conversation_id=conv.id,
                 role="user",
                 content=None  # Violates NOT NULL constraint
@@ -195,10 +201,11 @@ async def test_message_with_null_content(db):
             await session.commit()
 
 @pytest.mark.asyncio
-async def test_cascading_deletes(db):
+async def test_cascading_deletes(request, db):
     """Test conversation deletion cascades to messages"""
     conv = await db.create_conversation(CHAT_ID)
-    await db.add_message(conv.id, "user", "Test")
+    request.config.MESSAGE_ID += 1
+    await db.add_message(request.config.MESSAGE_ID, conv.id, "user", "Test")
     
     # Manual delete to test cascade (not exposed in Database class)
     async with db.SessionLocal() as session:

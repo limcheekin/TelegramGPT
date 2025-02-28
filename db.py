@@ -31,7 +31,12 @@ class DBConversation(Base):
 
 class DBMessage(Base):
     __tablename__ = 'messages'
-    id = Column(Integer, primary_key=True)
+    id = Column(
+        Integer, 
+        primary_key=True,
+        autoincrement=False,
+        nullable=False
+    )
     conversation_id = Column(
         Integer, 
         ForeignKey('conversations.id', ondelete="CASCADE"), 
@@ -116,7 +121,8 @@ class Database:
                 raise
 
     async def add_message(
-        self, 
+        self,
+        message_id: int,  
         conversation_id: int, 
         role: Literal['user', 'assistant', 'system'], 
         content: str,
@@ -138,6 +144,7 @@ class Database:
                 await session.begin()
                 
             msg = DBMessage(
+                id=message_id,
                 conversation_id=conversation_id,
                 role=role,
                 content=content,
