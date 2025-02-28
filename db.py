@@ -55,7 +55,7 @@ class DBConversationMode(Base):
 
 class Database:
     def __init__(self, dsn: str):
-        self.engine = create_async_engine(dsn, echo=False, future=True, connect_args={"check_same_thread": False})
+        self.engine = create_async_engine(dsn, echo=False, future=True)
         self.SessionLocal = sessionmaker(
             self.engine, 
             expire_on_commit=False, 
