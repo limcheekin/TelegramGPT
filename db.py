@@ -266,6 +266,50 @@ class Database:
                 logging.error("Database error listing conversations: %s", e)
                 raise
 
+    async def list_conversations_by_chat_id(
+        self, 
+        chat_id: int,
+        skip: int = 0, 
+        limit: Optional[int] = None,
+        order_by: Literal['started_at', 'updated_at'] = 'started_at',
+        order_dir: Literal['asc', 'desc'] = 'desc'
+    ) -> List[DBConversation]:
+        """
+        List conversations with pagination, sorting with chat_id filtering.
+        
+        Args:
+            chat_id: filter by chat ID
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            order_by: Field to sort by ('started_at' or 'updated_at')
+            order_dir: Sort direction ('asc' or 'desc')
+            
+        Returns:
+            List of DBConversation objects
+        """
+        skip = max(0, skip)
+        if limit is not None:
+            limit = max(0, limit)
+            
+        async with self.SessionLocal() as session:
+            try:
+                # Determine sort column and direction
+                sort_column = getattr(DBConversation, order_by)
+                if order_dir == 'desc':
+                    sort_column = sort_column.desc()                
+                query = (
+                    select(DBConversation)
+                    .where(DBConversation.chat_id == chat_id)
+                    .order_by(sort_column)
+                    .offset(skip)
+                    .limit(limit)
+                )
+                result = await session.execute(query)
+                return result.scalars().all()
+            except SQLAlchemyError as e:
+                logging.error("Database error listing conversations by chat ID: %s", e)
+                raise
+
     # region Conversation Modes
     async def create_conversation_mode(self, title: str, prompt: str) -> DBConversationMode:
         """Create a new conversation mode with UUID."""

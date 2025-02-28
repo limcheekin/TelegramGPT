@@ -172,7 +172,7 @@ class ChatManager:
 
   async def resume(self, *, conversation_id: int):
     chat_id = self.context.chat_id
-    conversation = self.context.get_conversation(conversation_id)
+    conversation = await self.db.get_conversation(conversation_id)
     if not conversation:
       await self.bot.send_message(chat_id=chat_id, text="Failed to find that conversation. Try sending a new message.")
       return
@@ -182,7 +182,7 @@ class ChatManager:
     text = f"Resuming conversation \"{conversation.title}\"{mode_description}:"
     await self.bot.send_message(chat_id=chat_id, text=text)
 
-    last_message = conversation.last_message
+    last_message = conversation.messages[-1]
     if last_message:
       await self.bot.edit_message_text(chat_id=chat_id, message_id=last_message.id, text=last_message.content)
 
@@ -193,7 +193,7 @@ class ChatManager:
     logging.info(f"Resumed conversation {conversation.id} for chat {chat_id}")
 
   async def show_conversation_history(self):
-    conversations = list(self.context.all_conversations.values())
+    conversations = await self.db.list_conversations_by_chat_id(self.context.chat_id)
     text = '\n'.join(f"[/resume_{conversation.id}] {conversation.title} ({conversation.started_at:%Y-%m-%d %H:%M})" for conversation in conversations)
 
     if not text:
