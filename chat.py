@@ -100,7 +100,7 @@ class ChatManager:
 
   async def __create_conversation(self, user_message: UserMessage) -> Conversation:
       # Create a new conversation record in PostgreSQL.
-      db_conv = await self.db.create_conversation()
+      db_conv = await self.db.create_conversation(self.context.chat_id)
       # Save the initial user message.
       await self.db.add_message(db_conv.id, user_message.role, user_message.content)
       # Create an in-memory conversation representation.

@@ -9,6 +9,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 TEST_DSN = "sqlite+aiosqlite:///:memory:"
+CHAT_ID = 1234567
 
 @pytest_asyncio_fixture(scope="module")
 async def db():
@@ -30,7 +31,7 @@ async def cleanup(db):
 @pytest.mark.asyncio
 async def test_rollback_on_error(db):
     """Test transaction rollback on invalid operation"""
-    conv = await db.create_conversation()
+    conv = await db.create_conversation(CHAT_ID)
     initial_updated = conv.updated_at
     
     # Use a single transaction for multiple operations
@@ -50,7 +51,7 @@ async def test_rollback_on_error(db):
 @pytest.mark.asyncio
 async def test_concurrent_updates(db):
     """Test race condition handling for updated_at (explicit timestamps)"""
-    conv = await db.create_conversation()
+    conv = await db.create_conversation(CHAT_ID)
     initial_updated = conv.updated_at
     
     # Simulate concurrent updates with explicit timestamps
@@ -78,9 +79,9 @@ async def test_concurrent_updates(db):
 async def test_ordering_of_conversations(db):
     """Test various sorting combinations"""
     # Create test conversations with known timestamps
-    conv1 = await db.create_conversation()
-    conv2 = await db.create_conversation()
-    conv3 = await db.create_conversation()
+    conv1 = await db.create_conversation(CHAT_ID)
+    conv2 = await db.create_conversation(CHAT_ID)
+    conv3 = await db.create_conversation(CHAT_ID)
     
     test_ids = [conv1.id, conv2.id, conv3.id]
     
@@ -104,7 +105,7 @@ async def test_ordering_of_conversations(db):
 @pytest.mark.asyncio
 async def test_eager_loading_queries(db):
     """Verify eager loading doesn't make extra queries"""
-    conv = await db.create_conversation()
+    conv = await db.create_conversation(CHAT_ID)
     await db.add_message(conv.id, "user", "Test")
 
     # Count the number of queries executed
@@ -149,7 +150,7 @@ async def test_max_content_length(db):
     """Test maximum content length handling (database-specific limit)"""
     # PostgreSQL TEXT type has no inherent length limit, but practical limits apply
     huge_content = "x" * 10_000_000  # 10MB
-    conv = await db.create_conversation()
+    conv = await db.create_conversation(CHAT_ID)
     msg = await db.add_message(conv.id, "user", huge_content)
     assert len(msg.content) == 10_000_000
 
@@ -182,7 +183,7 @@ async def test_nonexistent_conversation_retrieval(db):
 @pytest.mark.asyncio
 async def test_message_with_null_content(db):
     """Test database constraints for required fields"""
-    conv = await db.create_conversation()
+    conv = await db.create_conversation(CHAT_ID)
     with pytest.raises(IntegrityError):
         async with db.SessionLocal() as session:
             msg = DBMessage(
@@ -196,7 +197,7 @@ async def test_message_with_null_content(db):
 @pytest.mark.asyncio
 async def test_cascading_deletes(db):
     """Test conversation deletion cascades to messages"""
-    conv = await db.create_conversation()
+    conv = await db.create_conversation(CHAT_ID)
     await db.add_message(conv.id, "user", "Test")
     
     # Manual delete to test cascade (not exposed in Database class)

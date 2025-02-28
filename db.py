@@ -17,6 +17,7 @@ Base = declarative_base()
 # region Models
 class DBConversation(Base):
     __tablename__ = 'conversations'
+    chat_id = Column(Integer, index=True, nullable=False)
     id = Column(Integer, primary_key=True)
     title = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -77,7 +78,7 @@ class Database:
             await conn.run_sync(Base.metadata.create_all)
         logging.info("Database initialized.")
 
-    async def create_conversation(self, title: Optional[str] = None) -> DBConversation:
+    async def create_conversation(self, chat_id: int, title: Optional[str] = None) -> DBConversation:
         """Create a new conversation with server-generated timestamps."""
         async with self.SessionLocal() as session:
             try:
@@ -85,6 +86,7 @@ class Database:
                     # For SQLite tests, set the timestamp explicitly
                     now = datetime.now()
                     conv = DBConversation(
+                        chat_id=chat_id,
                         title=title,
                         started_at=now,
                         updated_at=now
