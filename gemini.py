@@ -70,6 +70,7 @@ class GPTClient:
             async def set_title(conversation: Conversation):
                 prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the begining or the end.'
                 title = await self.__request(SystemMessage(prompt), conversation.messages)
+                title = title.strip()
                 conversation.title = title
 
                 logging.info(f"Set title for conversation {conversation}: '{title}'")
