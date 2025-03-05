@@ -102,7 +102,7 @@ class ChatManager:
       # Create a new conversation record in PostgreSQL.
       db_conv = await self.db.create_conversation(self.context.chat_id)
       # Save the initial user message.
-      await self.db.add_message(db_conv.id, user_message.role, user_message.content)
+      await self.db.add_message(user_message.id, db_conv.id, user_message.role, user_message.content)
       # Create an in-memory conversation representation.
       conversation = Conversation(id=db_conv.id, title=None, started_at=user_message.timestamp, messages=[user_message])
       return conversation
@@ -115,7 +115,7 @@ class ChatManager:
     conversation = self.context.chat_state.current_conversation
     if conversation:
       conversation.messages.append(user_message)
-      await self.db.add_message(conversation.id, user_message.role, user_message.content)
+      await self.db.add_message(user_message.id, conversation.id, user_message.role, user_message.content)
     else:
       conversation = await self.__create_conversation(user_message)
 
@@ -172,7 +172,7 @@ class ChatManager:
 
   async def resume(self, *, conversation_id: int):
     chat_id = self.context.chat_id
-    conversation = await self.db.get_conversation(conversation_id)
+    conversation = Conversation.from_db_model(await self.db.get_conversation(conversation_id))
     if not conversation:
       await self.bot.send_message(chat_id=chat_id, text="Failed to find that conversation. Try sending a new message.")
       return
@@ -182,7 +182,8 @@ class ChatManager:
     text = f"Resuming conversation \"{conversation.title}\"{mode_description}:"
     await self.bot.send_message(chat_id=chat_id, text=text)
 
-    last_message = conversation.messages[-1]
+    last_message = conversation.last_message
+    logging.info(f"last_message {last_message}")
     if last_message:
       await self.bot.edit_message_text(chat_id=chat_id, message_id=last_message.id, text=last_message.content)
 
@@ -337,8 +338,7 @@ class ChatManager:
           if not assistant_message:
               assistant_message = AssistantMessage(sent_message_id, '', conversation.messages[-1].id)
               # Insert the initial assistant message into the DB.
-              db_msg = await self.db.add_message(conversation.id, assistant_message.role.value, assistant_message.content)
-              assistant_message.id = db_msg.id  # update in-memory ID to match DB record
+              await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, assistant_message.content)
           else:
               assistant_message.content = chunk.content
               # Update the existing DB record incrementally.
