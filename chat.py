@@ -179,13 +179,15 @@ class ChatManager:
 
     current_mode = self.context.current_mode
     mode_description = f" in mode \"{current_mode.title}\"" if current_mode else ""
-    text = f"Resuming conversation \"{conversation.title}\"{mode_description}:"
-    await self.bot.send_message(chat_id=chat_id, text=text)
+    text = f"Resuming conversation \"{conversation.title}\"{mode_description}: "
+    sent_message = await self.bot.send_message(chat_id=chat_id, text=text)
 
     last_message = conversation.last_message
     logging.info(f"last_message {last_message}")
     if last_message:
-      await self.bot.edit_message_text(chat_id=chat_id, message_id=last_message.id, text=last_message.content)
+      await self.bot.edit_message_text(chat_id=chat_id, 
+                                       message_id=sent_message.id, 
+                                       text=text + last_message.content)
 
     self.context.chat_state.current_conversation = conversation
 
