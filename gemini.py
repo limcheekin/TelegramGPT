@@ -134,7 +134,13 @@ class GPTClient:
                 config = types.GenerateContentConfig()    
             async for chunk in await self.__client.aio.models.generate_content_stream(
                 model=self.__model_name,
-                contents=[message.content for message in messages],
+                contents=[
+                        types.Content(
+                            role=message.role.value,
+                            parts=[types.Part.from_text(text=message.content)]
+                        )
+                        for message in messages
+                    ],
                 config=config
             ):
                 yield chunk.text
