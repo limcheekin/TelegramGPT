@@ -29,6 +29,23 @@ class DBConversation(Base):
     )
     messages = relationship("DBMessage", back_populates="conversation", cascade="all, delete-orphan")
 
+class ActiveConversation(Base):
+    __tablename__ = 'active_conversations'
+    chat_id = Column(Integer, primary_key=True)
+    conversation_id = Column(
+        Integer, 
+        ForeignKey('conversations.id', ondelete="CASCADE"),
+        index=True, 
+        nullable=False
+    )
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        index=True
+    )    
+
 class DBMessage(Base):
     __tablename__ = 'messages'
     id = Column(
@@ -84,11 +101,9 @@ class Database:
         logging.info("Database initialized.")
 
     async def create_conversation(self, chat_id: int, title: Optional[str] = None) -> DBConversation:
-        """Create a new conversation with server-generated timestamps."""
         async with self.SessionLocal() as session:
             try:
                 async with session.begin():
-                    # For SQLite tests, set the timestamp explicitly
                     now = datetime.now()
                     conv = DBConversation(
                         chat_id=chat_id,
@@ -97,7 +112,24 @@ class Database:
                         updated_at=now
                     )
                     session.add(conv)
-                # Refresh to load server-generated values
+                    # Flush to get conv.id assigned
+                    await session.flush()
+
+                    # Only create ActiveConversation if it doesn't exist yet.
+                    active_conv = await session.get(ActiveConversation, chat_id)
+                    if not active_conv:
+                        active_conv = ActiveConversation(
+                            chat_id=chat_id,
+                            conversation_id=conv.id
+                        )
+                        session.add(active_conv)
+                    else:
+                        await session.execute(
+                                    update(ActiveConversation)
+                                    .where(ActiveConversation.chat_id == chat_id)
+                                    .values(conversation_id=conv.id)
+                                )    
+                # At this point, both objects have been committed.
                 await session.refresh(conv)
                 return conv
             except SQLAlchemyError as e:
@@ -117,7 +149,7 @@ class Database:
                                 )
                 await session.commit()
             except SQLAlchemyError as e:
-                logging.error("Database error creating conversation: %s", e)
+                logging.error("Database error update conversation: %s", e)
                 raise
 
     async def add_message(
@@ -315,6 +347,37 @@ class Database:
                 return result.scalars().all()
             except SQLAlchemyError as e:
                 logging.error("Database error listing conversations by chat ID: %s", e)
+                raise
+
+
+    async def update_active_conversation(self, chat_id: int, conversation_id: int):
+        """Update conversation's id for given chat_id """
+        logging.info("chat_id: %s, conversation_id: %s", chat_id, conversation_id)
+        async with self.SessionLocal() as session:
+            try:
+                async with session.begin():
+                    await session.execute(
+                                    update(ActiveConversation)
+                                    .where(ActiveConversation.chat_id == chat_id)
+                                    .values(conversation_id=conversation_id)
+                                )
+                await session.commit()
+            except SQLAlchemyError as e:
+                logging.error("Database error update active conversation: %s", e)
+                raise
+
+    async def get_active_conversation(self, chat_id: int) -> Optional[ActiveConversation]:
+        logging.info("chat_id: %s", chat_id)
+        async with self.SessionLocal() as session:
+            try:
+                stmt = (
+                    select(ActiveConversation)
+                    .where(ActiveConversation.chat_id == chat_id)
+                )
+                result = await session.execute(stmt)
+                return result.scalar()
+            except SQLAlchemyError as e:
+                logging.error("Database error getting active conversation: %s", e)
                 raise
 
     # region Conversation Modes

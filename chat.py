@@ -190,7 +190,7 @@ class ChatManager:
                                        text=text + last_message.content)
 
     self.context.chat_state.current_conversation = conversation
-
+    await self.db.update_active_conversation(chat_id, conversation.id)
     self.__add_timeout_task()
 
     logging.info(f"Resumed conversation {conversation.id} for chat {chat_id}")

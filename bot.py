@@ -7,12 +7,13 @@ from enum import Enum
 from gemini import GPTClient
 from speech import SpeechClient
 from telegram import Update
-from telegram.ext import Application, CallbackQueryHandler, ConversationHandler, PicklePersistence, filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler
+from telegram.ext import Application, CallbackQueryHandler, ConversationHandler, filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler
 from telegram.warnings import PTBUserWarning
 from typing import cast
 from uuid import uuid4
 from warnings import filterwarnings
 from db import Database
+from models import Conversation
 
 async def __start(_: Update, chat_manager: ChatManager):
   chat_id = chat_manager.context.chat_id
@@ -204,6 +205,12 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
   async def invoke(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if chat_id not in chat_states:
       chat_states[chat_id] = ChatState()
+      active_conversation = await db.get_active_conversation(chat_id)
+      if active_conversation:
+        conversation = Conversation.from_db_model(await db.get_conversation(active_conversation.conversation_id))
+        if conversation:
+          chat_states[chat_id].current_conversation = conversation
+
     chat_state = chat_states[chat_id]
 
     chat_data = cast(ChatData, context.chat_data)
