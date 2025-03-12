@@ -97,7 +97,7 @@ class ChatManager:
     #reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Change mode", callback_data="/mode")]])
     #await self.bot.send_message(chat_id=self.context.chat_id, text=text, reply_markup=reply_markup)
     await self.bot.send_message(chat_id=self.context.chat_id, text=text)
-    
+
     logging.info(f"Started a new conversation for chat {self.context.chat_id}")
 
   async def __create_conversation(self, user_message: UserMessage) -> Conversation:
@@ -340,23 +340,22 @@ class ChatManager:
       if self.context.current_mode:
           system_prompt = SystemMessage(self.context.current_mode.prompt)
       async for chunk in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
-          if not assistant_message:
-              assistant_message = AssistantMessage(sent_message_id, '', conversation.messages[-1].id)
-              # Insert the initial assistant message into the DB.
-              await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, assistant_message.content)
-          else:
-              # Ensure the content is not exceed max message length of 4096 characters.
-              content_length = len(chunk.content)
-              if content_length > 4000:
-                break
-              assistant_message.content = chunk.content   
-              # Update the existing DB record incrementally.
-              await self.db.update_message(assistant_message.id, assistant_message.content)
-          await self.bot.edit_message_text(
-            chat_id=chat_id, 
-            message_id=sent_message_id, 
-            text=assistant_message.content + '\n\nGenerating...'
-          )       
+          # Ensure the content is not exceed max message length of 4096 characters.
+          content_length = len(chunk.content)
+          if content_length <= 4000:               
+            if not assistant_message:
+                assistant_message = AssistantMessage(sent_message_id, '', conversation.messages[-1].id)
+                # Insert the initial assistant message into the DB.
+                await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, assistant_message.content)
+            else:
+                assistant_message.content = chunk.content   
+                # Update the existing DB record incrementally.
+                await self.db.update_message(assistant_message.id, assistant_message.content)
+            await self.bot.edit_message_text(
+              chat_id=chat_id, 
+              message_id=sent_message_id, 
+              text=assistant_message.content + '\n\nGenerating...'
+            )       
       if assistant_message:
           if content_length > 4000:
             text = f'{assistant_message.content}...\n\n(Please type "continue" to view the rest of the message.)'
