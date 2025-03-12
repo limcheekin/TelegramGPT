@@ -94,9 +94,10 @@ class ChatManager:
       text = "Started a new conversation."
       #text = "Started a new conversation without mode. Send /mode to create a new mode."
 
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Change mode", callback_data="/mode")]])
-    await self.bot.send_message(chat_id=self.context.chat_id, text=text, reply_markup=reply_markup)
-
+    #reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Change mode", callback_data="/mode")]])
+    #await self.bot.send_message(chat_id=self.context.chat_id, text=text, reply_markup=reply_markup)
+    await self.bot.send_message(chat_id=self.context.chat_id, text=text)
+    
     logging.info(f"Started a new conversation for chat {self.context.chat_id}")
 
   async def __create_conversation(self, user_message: UserMessage) -> Conversation:
