@@ -264,7 +264,7 @@ def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptio
       ('new', "Start a new conversation"),
       ('history', "Show previous conversations"),
       ('retry', "Regenerate response for last message"),
-      ('mode', "Select a mode for current chat and manage modes"),
+      # ('mode', "Select a mode for current chat and manage modes"),
       ('say', "Read out message sent by the bot by replying to it")
     ]
     await app.bot.set_my_commands(commands)
@@ -301,25 +301,25 @@ def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptio
   app.add_handler(CommandHandler('history', create_callback(__show_conversation_history), block=False))
   app.add_handler(CommandHandler('say', create_callback(__read_out_message), block=False))
 
-  app.add_handler(CommandHandler('mode', create_callback(__set_mode), block=False))
-  app.add_handler(CallbackQueryHandler(create_callback(__set_mode), pattern=r'^/mode$', block=False))
-  app.add_handler(CallbackQueryHandler(create_callback(__edit_modes), pattern=r'^\/mode_show$', block=False))
-  app.add_handler(CallbackQueryHandler(create_callback(__mode_show_detail), pattern=r'\/mode_detail_.+', block=False))
-  app.add_handler(CallbackQueryHandler(create_callback(__mode_select), pattern=r'\/mode_select_.+', block=False))
-  app.add_handler(CallbackQueryHandler(create_callback(__mode_clear), pattern=r'^\/mode_clear$', block=False))
-  app.add_handler(CallbackQueryHandler(create_callback(__mode_delete), pattern=r'\/mode_delete_.+', block=False))
+  # app.add_handler(CommandHandler('mode', create_callback(__set_mode), block=False))
+  # app.add_handler(CallbackQueryHandler(create_callback(__set_mode), pattern=r'^/mode$', block=False))
+  # app.add_handler(CallbackQueryHandler(create_callback(__edit_modes), pattern=r'^\/mode_show$', block=False))
+  # app.add_handler(CallbackQueryHandler(create_callback(__mode_show_detail), pattern=r'\/mode_detail_.+', block=False))
+  # app.add_handler(CallbackQueryHandler(create_callback(__mode_select), pattern=r'\/mode_select_.+', block=False))
+  # app.add_handler(CallbackQueryHandler(create_callback(__mode_clear), pattern=r'^\/mode_clear$', block=False))
+  # app.add_handler(CallbackQueryHandler(create_callback(__mode_delete), pattern=r'\/mode_delete_.+', block=False))
 
-  app.add_handler(ConversationHandler(
-                    entry_points=[
-                      CallbackQueryHandler(create_callback(__mode_add_start), pattern=r'^\/mode_add$', block=False),
-                      CallbackQueryHandler(create_callback(__mode_edit_start), pattern=r'\/mode_edit_.+', block=False),
-                    ],
-                    states={
-                      ModeEditState.ENTER_TITLE: [MessageHandler(filters.TEXT & filters.UpdateType.MESSAGE & (~filters.COMMAND), create_callback(__mode_enter_title), block=False)],
-                      ModeEditState.ENTER_PROMPT: [MessageHandler(filters.TEXT & filters.UpdateType.MESSAGE & (~filters.COMMAND), create_callback(__mode_enter_prompt), block=False)],
-                    },
-                    fallbacks=[CommandHandler('cancel', create_callback(__mode_add_cancel), block=False)],
-                  ))
+  # app.add_handler(ConversationHandler(
+  #                   entry_points=[
+  #                     CallbackQueryHandler(create_callback(__mode_add_start), pattern=r'^\/mode_add$', block=False),
+  #                     CallbackQueryHandler(create_callback(__mode_edit_start), pattern=r'\/mode_edit_.+', block=False),
+  #                   ],
+  #                   states={
+  #                     ModeEditState.ENTER_TITLE: [MessageHandler(filters.TEXT & filters.UpdateType.MESSAGE & (~filters.COMMAND), create_callback(__mode_enter_title), block=False)],
+  #                     ModeEditState.ENTER_PROMPT: [MessageHandler(filters.TEXT & filters.UpdateType.MESSAGE & (~filters.COMMAND), create_callback(__mode_enter_prompt), block=False)],
+  #                   },
+  #                   fallbacks=[CommandHandler('cancel', create_callback(__mode_add_cancel), block=False)],
+  #                 ))
 
   app.add_handler(MessageHandler(filters.TEXT & filters.UpdateType.MESSAGE & (~filters.COMMAND), create_callback(__handle_message), block=False))
   app.add_handler(MessageHandler(filters.VOICE & filters.UpdateType.MESSAGE, create_callback(__handle_audio), block=False))

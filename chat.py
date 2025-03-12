@@ -91,7 +91,8 @@ class ChatManager:
     if current_mode:
       text = f"Started a new conversation in mode \"{current_mode.title}\"."
     else:
-      text = "Started a new conversation without mode. Send /mode to create a new mode."
+      text = "Started a new conversation."
+      #text = "Started a new conversation without mode. Send /mode to create a new mode."
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Change mode", callback_data="/mode")]])
     await self.bot.send_message(chat_id=self.context.chat_id, text=text, reply_markup=reply_markup)
