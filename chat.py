@@ -334,6 +334,7 @@ class ChatManager:
     try:
       system_prompt = None
       assistant_message = None
+      
       if self.context.current_mode:
           system_prompt = SystemMessage(self.context.current_mode.prompt)
       async for chunk in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
@@ -342,7 +343,11 @@ class ChatManager:
               # Insert the initial assistant message into the DB.
               await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, assistant_message.content)
           else:
-              assistant_message.content = chunk.content
+              # Ensure the content is not exceed max message length of 4096 characters.
+              content_length = len(chunk.content)
+              if content_length > 4000:
+                break
+              assistant_message.content = chunk.content   
               # Update the existing DB record incrementally.
               await self.db.update_message(assistant_message.id, assistant_message.content)
           await self.bot.edit_message_text(
@@ -351,10 +356,14 @@ class ChatManager:
             text=assistant_message.content + '\n\nGenerating...'
           )       
       if assistant_message:
+          if content_length > 4000:
+            text = f'{assistant_message.content}...\n\n(Please type "continue" to view the rest of the message.)'
+          else:
+            text = assistant_message.content  
           await self.bot.edit_message_text(
               chat_id=chat_id, 
               message_id=sent_message_id, 
-              text=assistant_message.content
+              text=text
           )
       if conversation.title:
           await self.db.update_conversation(conversation.id, conversation.title)                  

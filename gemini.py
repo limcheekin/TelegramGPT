@@ -131,7 +131,7 @@ class GPTClient:
                     temperature=0.0,
                 )
             else:
-                config = types.GenerateContentConfig()    
+                config = types.GenerateContentConfig(max_output_tokens=1024)    
             async for chunk in await self.__client.aio.models.generate_content_stream(
                 model=self.__model_name,
                 contents=[
