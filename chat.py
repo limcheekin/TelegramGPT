@@ -69,6 +69,8 @@ class ChatContext:
   def set_current_mode(self, mode: ConversationMode|None):
     self.__chat_data['current_mode_id'] = mode.id if mode else None
 
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096 # Telegram's actual limit
+
 class ChatManager:
   def __init__(self, *, gpt: GPTClient, speech: SpeechClient|None, bot: ExtBot, 
                context: ChatContext, conversation_timeout: int|None, db: Database):
@@ -332,56 +334,127 @@ class ChatManager:
     await self.bot.edit_message_text(chat_id=self.context.chat_id, message_id=sent_message_id, text=text)
 
   async def __complete(self, conversation: Conversation, sent_message_id: int):
-    chat_id = self.context.chat_id
-    try:
-      system_prompt = None
-      assistant_message = None
-      
-      if self.context.current_mode:
-          system_prompt = SystemMessage(self.context.current_mode.prompt)
-      async for chunk in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
-          # Ensure the content is not exceed max message length of 4096 characters.
-          content_length = len(chunk.content)
-          if content_length <= 4000:               
-            if not assistant_message:
-                assistant_message = AssistantMessage(sent_message_id, '', conversation.messages[-1].id)
-                # Insert the initial assistant message into the DB.
-                await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, assistant_message.content)
-            else:
-                assistant_message.content = chunk.content   
-                # Update the existing DB record incrementally.
-                await self.db.update_message(assistant_message.id, assistant_message.content)
-            await self.bot.edit_message_text(
-              chat_id=chat_id, 
-              message_id=sent_message_id, 
-              text=assistant_message.content + '\n\nGenerating...'
-            )       
-      if assistant_message:
-          if content_length > 4000:
-            text = f'{assistant_message.content}...\n\n(Please type "continue" to view the rest of the message.)'
-          else:
-            text = assistant_message.content  
-          await self.bot.edit_message_text(
-              chat_id=chat_id, 
-              message_id=sent_message_id, 
-              text=text
-          )
-      if conversation.title:
-          await self.db.update_conversation(conversation.id, conversation.title)                  
-      logging.info(f"Replied chat {chat_id} with message '{assistant_message.content}'")
-    except TimeoutError:
-      retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
-      await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Generation timed out.", reply_markup=retry_markup)
-      logging.info(f"Timed out generating response for chat {chat_id}")
-    except Exception as e:
-      retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
-      await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Error generating response", reply_markup=retry_markup)
-      logging.error(f"Error generating response for chat {chat_id}: {e}")
-      
-    
-    self.context.chat_state.current_conversation = conversation
+      chat_id = self.context.chat_id
+      try:
+          system_prompt = None
+          assistant_message = None
+          accumulated_content = "" # Keep track of the full content
 
-    self.__add_timeout_task()
+          if self.context.current_mode:
+              system_prompt = SystemMessage(self.context.current_mode.prompt)
+
+          # The generator from gpt.complete yields AssistantMessage objects with
+          # potentially growing content based on the current implementation.
+          async for chunk_message in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
+              # Update accumulated content
+              accumulated_content = chunk_message.content # Assume chunk_message has the full content up to this point
+
+              # Ensure assistant_message is initialized on the first chunk
+              if not assistant_message:
+                  # Use the ID and replied_to_id from the first chunk_message
+                  assistant_message = AssistantMessage(chunk_message.id, '', chunk_message.replied_to_id)
+                  # Insert the initial assistant message into the DB (content is empty initially)
+                  await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, '') # Start with empty
+
+              # Update the content in the message object and DB
+              assistant_message.content = accumulated_content
+              await self.db.update_message(assistant_message.id, assistant_message.content)
+
+              # Check accumulated length *before* sending edit to avoid exceeding limit temporarily
+              # Use a slightly lower threshold for the "Generating..." edit to leave room
+              display_limit = TELEGRAM_MAX_MESSAGE_LENGTH - 50 # Leave buffer for "Generating..."
+              if len(assistant_message.content) <= display_limit:
+                  display_text = assistant_message.content + '\n\nGenerating...'
+              else:
+                  # If already exceeding, just show truncated + Generating...
+                  display_text = assistant_message.content[:display_limit] + '...\n\nGenerating...'
+
+              await self.bot.edit_message_text(
+                  chat_id=chat_id,
+                  message_id=sent_message_id,
+                  text=display_text
+              )
+
+          # Final message processing after stream ends
+          if assistant_message:
+              # Now check the final accumulated length against the *actual* limit
+              if len(assistant_message.content) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                  # Truncate properly and add the "continue" prompt
+                  final_text = f'{assistant_message.content[:TELEGRAM_MAX_MESSAGE_LENGTH - 100]}...\n\n(Please type "continue" to view the rest of the message.)'
+                    # Update the DB with the *truncated* final text that was sent
+                  await self.db.update_message(assistant_message.id, final_text)
+              else:
+                  final_text = assistant_message.content
+                  # DB message should already match final_text here
+
+              await self.bot.edit_message_text(
+                  chat_id=chat_id,
+                  message_id=sent_message_id,
+                  text=final_text # Send the final, potentially truncated, text
+              )
+
+              # Update conversation title (assuming assistant_message has content)
+              if conversation.title is None and len(conversation.messages) >= 2: # Need user+assistant msg
+                  # Consider potential errors during title generation
+                  try:
+                      await self.__generate_and_set_title(conversation)
+                  except Exception as title_e:
+                      logging.error(f"Failed to generate title for conversation {conversation.id}: {title_e}")
+
+
+              logging.info(f"Replied chat {chat_id} with message length {len(final_text)}")
+
+      except TimeoutError:
+          retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
+          await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Generation timed out.", reply_markup=retry_markup)
+          logging.info(f"Timed out generating response for chat {chat_id}")
+      except Exception as e:
+          retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
+          # Avoid sending overly detailed errors to the user
+          await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Sorry, an error occurred while generating the response.", reply_markup=retry_markup)
+          logging.exception(f"Error generating response for chat {chat_id}: {e}") # Use logging.exception for stack trace
+
+
+      # Ensure current conversation is set even if errors occurred before title generation
+      self.context.chat_state.current_conversation = conversation
+      self.__add_timeout_task()
+
+  async def __generate_and_set_title(self, conversation: Conversation):
+      """Helper function to generate and set the conversation title."""
+      # Check if title generation is feasible/needed
+      if conversation.title is not None or len(conversation.messages) < 2:
+            return
+
+      logging.info(f"Attempting to generate title for conversation {conversation.id}")
+      # Assuming gpt client has a method for single requests or adapt __request
+      # This might need adjustment based on gemini.py/__request structure
+      # Ensure we only send relevant messages for title generation (e.g., first user/assistant pair)
+      messages_for_title = conversation.messages[:2] # Example: Use first user msg and first assistant reply
+
+      try:
+          # This logic needs to align with how gemini.py/__request or gpt.py/__request works
+          # It might require adapting those methods or calling them appropriately
+          # For gemini.py, it seems __request takes SystemMessage + list[Message]
+          prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the beginning or the end.'
+          # Assuming self.__gpt has an equivalent synchronous or async method for single request
+          # This part needs careful implementation based on the chosen LLM client interface
+          # Example placeholder:
+          title = await self.__gpt.generate_title(messages_for_title) # Placeholder for actual call
+
+          if title:
+                title = title.strip().strip('.,?!"\'') # Clean up title
+                conversation.title = title
+                await self.db.update_conversation(conversation.id, conversation.title)
+                logging.info(f"Set title for conversation {conversation.id}: '{title}'")
+          else:
+                logging.warning(f"Title generation returned empty for conversation {conversation.id}")
+
+      except Exception as e:
+          # Log error but don't let title generation failure break the main flow
+          logging.error(f"Error during title generation for conversation {conversation.id}: {e}")
+          # Optionally set a default title or leave it None
+          # conversation.title = "Untitled Conversation"
+          # await self.db.update_conversation(conversation.id, conversation.title)
 
   async def __read_out_message(self, message: AssistantMessage):
     chat_id = self.context.chat_id
