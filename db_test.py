@@ -33,16 +33,16 @@ async def test_rollback_on_error(request, db):
     """Test transaction rollback on invalid operation"""
     conv = await db.create_conversation(CHAT_ID)
     initial_updated = conv.updated_at
+    message_id = 1
+    message_id_2 = 2
     
     # Use a single transaction for multiple operations
     async with db.SessionLocal() as session:
         try:
             async with session.begin():
                 # Valid message followed by invalid operation
-                request.config.MESSAGE_ID += 1
-                await db.add_message(request.config.MESSAGE_ID, conv.id, "user", "valid", session=session)
-                request.config.MESSAGE_ID += 1
-                await db.add_message(request.config.MESSAGE_ID, conv.id, "invalid_role", "test", session=session)
+                await db.add_message(message_id, conv.id, "user", "valid", session=session)
+                await db.add_message(message_id_2, conv.id, "invalid_role", "test", session=session)
         except ValueError:
             pass  # Exception is expected
     
@@ -108,8 +108,8 @@ async def test_ordering_of_conversations(db):
 async def test_eager_loading_queries(request, db):
     """Verify eager loading doesn't make extra queries"""
     conv = await db.create_conversation(CHAT_ID)
-    request.config.MESSAGE_ID += 1
-    await db.add_message(request.config.MESSAGE_ID, conv.id, "user", "Test")
+    message_id = 1
+    await db.add_message(message_id, conv.id, "user", "Test")
 
     # Count the number of queries executed
     query_count = 0
@@ -154,16 +154,16 @@ async def test_max_content_length(request, db):
     # PostgreSQL TEXT type has no inherent length limit, but practical limits apply
     huge_content = "x" * 10_000_000  # 10MB
     conv = await db.create_conversation(CHAT_ID)
-    request.config.MESSAGE_ID += 1
-    msg = await db.add_message(request.config.MESSAGE_ID, conv.id, "user", huge_content)
+    message_id = 101
+    msg = await db.add_message(message_id, conv.id, "user", huge_content)
     assert len(msg.content) == 10_000_000
 
 @pytest.mark.asyncio
 async def test_nonexistent_conversation_message(request, db):
     """Test adding message to non-existent conversation"""
     with pytest.raises(IntegrityError) as exc_info:
-        request.config.MESSAGE_ID += 1
-        await db.add_message(request.config.MESSAGE_ID, 99999, "user", "test")
+        message_id = 102
+        await db.add_message(message_id, 99999, "user", "test")
     assert "foreign key constraint" in str(exc_info.value).lower()
 
 @pytest.mark.asyncio
@@ -189,10 +189,11 @@ async def test_nonexistent_conversation_retrieval(db):
 async def test_message_with_null_content(request, db):
     """Test database constraints for required fields"""
     conv = await db.create_conversation(CHAT_ID)
+    message_id = 1
     with pytest.raises(IntegrityError):
         async with db.SessionLocal() as session:
             msg = DBMessage(
-                id=request.config.MESSAGE_ID,
+                id=message_id,
                 conversation_id=conv.id,
                 role="user",
                 content=None  # Violates NOT NULL constraint
@@ -204,8 +205,8 @@ async def test_message_with_null_content(request, db):
 async def test_cascading_deletes(request, db):
     """Test conversation deletion cascades to messages"""
     conv = await db.create_conversation(CHAT_ID)
-    request.config.MESSAGE_ID += 1
-    await db.add_message(request.config.MESSAGE_ID, conv.id, "user", "Test")
+    message_id = 103
+    await db.add_message(message_id, conv.id, "user", "Test")
     
     # Manual delete to test cascade (not exposed in Database class)
     async with db.SessionLocal() as session:
