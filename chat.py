@@ -11,6 +11,8 @@ from telegram.ext import ExtBot
 from typing import TypedDict, cast, final
 from uuid import uuid4
 from db import Database
+import time
+import os
 
 @dataclass
 class ConversationMode:
@@ -70,6 +72,8 @@ class ChatContext:
     self.__chat_data['current_mode_id'] = mode.id if mode else None
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096 # Telegram's actual limit
+# Define default throttle interval
+DEFAULT_EDIT_THROTTLE_INTERVAL_SECONDS = 0.5
 
 class ChatManager:
   def __init__(self, *, gpt: GPTClient, speech: SpeechClient|None, bot: ExtBot, 
@@ -80,6 +84,14 @@ class ChatManager:
     self.context = context
     self.__conversation_timeout = conversation_timeout
     self.db = db
+    # Get throttle interval from env var or use default
+    try:
+        self.__edit_throttle_interval = float(os.environ.get('TELEGRAM_GPT_EDIT_THROTTLE_INTERVAL', DEFAULT_EDIT_THROTTLE_INTERVAL_SECONDS))
+    except ValueError:
+        self.__edit_throttle_interval = DEFAULT_EDIT_THROTTLE_INTERVAL_SECONDS
+    logging.info(f"Using Telegram edit throttle interval: {self.__edit_throttle_interval}s")
+
+
 
   async def new_conversation(self):
     chat_state = self.context.chat_state
@@ -335,76 +347,109 @@ class ChatManager:
 
   async def __complete(self, conversation: Conversation, sent_message_id: int):
       chat_id = self.context.chat_id
+      assistant_message = None
+      accumulated_content = ""
+      last_edit_time = 0
+      initial_db_add_done = False # Flag for initial DB add
+
       try:
           system_prompt = None
-          assistant_message = None
-          accumulated_content = "" # Keep track of the full content
-
           if self.context.current_mode:
               system_prompt = SystemMessage(self.context.current_mode.prompt)
 
-          # The generator from gpt.complete yields AssistantMessage objects with
-          # potentially growing content based on the current implementation.
           async for chunk_message in self.__gpt.complete(conversation, conversation.messages[-1], sent_message_id, system_prompt):
-              # Update accumulated content
-              accumulated_content = chunk_message.content # Assume chunk_message has the full content up to this point
+              accumulated_content = chunk_message.content # Assumes chunk_message has cumulative content
 
-              # Ensure assistant_message is initialized on the first chunk
               if not assistant_message:
-                  # Use the ID and replied_to_id from the first chunk_message
                   assistant_message = AssistantMessage(chunk_message.id, '', chunk_message.replied_to_id)
-                  # Insert the initial assistant message into the DB (content is empty initially)
-                  await self.db.add_message(assistant_message.id, conversation.id, assistant_message.role.value, '') # Start with empty
+                  # Add to conversation object immediately if needed elsewhere,
+                  # but primary state is now accumulated_content
+                  # conversation.messages.append(assistant_message) # Optional: only if needed before stream ends
 
-              # Update the content in the message object and DB
-              assistant_message.content = accumulated_content
-              await self.db.update_message(assistant_message.id, assistant_message.content)
+                  # Initial DB add with empty content
+                  await self.db.add_message(
+                      assistant_message.id, conversation.id, assistant_message.role.value, ''
+                  )
+                  initial_db_add_done = True
 
-              # Check accumulated length *before* sending edit to avoid exceeding limit temporarily
-              # Use a slightly lower threshold for the "Generating..." edit to leave room
-              display_limit = TELEGRAM_MAX_MESSAGE_LENGTH - 50 # Leave buffer for "Generating..."
-              if len(assistant_message.content) <= display_limit:
-                  display_text = assistant_message.content + '\n\nGenerating...'
-              else:
-                  # If already exceeding, just show truncated + Generating...
-                  display_text = assistant_message.content[:display_limit] + '...\n\nGenerating...'
+              # --- Throttled Telegram Edit ---
+              current_time = time.monotonic()
+              if current_time - last_edit_time > self.__edit_throttle_interval:
+                  # Update the in-memory message object's content *before* displaying
+                  # This ensures the truncation logic later uses the most recent content
+                  if assistant_message: # Check if assistant_message exists
+                        assistant_message.content = accumulated_content
 
-              await self.bot.edit_message_text(
-                  chat_id=chat_id,
-                  message_id=sent_message_id,
-                  text=display_text
-              )
+                  display_limit = TELEGRAM_MAX_MESSAGE_LENGTH - 50 # Leave buffer
+                  display_text = (
+                      accumulated_content[:display_limit] + '...\n\nGenerating...'
+                      if len(accumulated_content) > display_limit
+                      else accumulated_content + '\n\nGenerating...'
+                  )
+                  try:
+                      print(f"text: {display_text}")
+                      await self.bot.edit_message_text(
+                          chat_id=chat_id, message_id=sent_message_id, text=display_text
+                      )
+                      last_edit_time = current_time
+                  except Exception as edit_err:
+                      logging.warning(f"Non-fatal error editing message during stream for chat {chat_id} (msg_id: {sent_message_id}): {edit_err}")
+                      # Prevent rapid retries on persistent edit errors
+                      last_edit_time = current_time
 
-          # Final message processing after stream ends
+          # --- Stream finished ---
+
           if assistant_message:
-              # Now check the final accumulated length against the *actual* limit
-              if len(assistant_message.content) > TELEGRAM_MAX_MESSAGE_LENGTH:
-                  # Truncate properly and add the "continue" prompt
-                  final_text = f'{assistant_message.content[:TELEGRAM_MAX_MESSAGE_LENGTH - 100]}...\n\n(Please type "continue" to view the rest of the message.)'
-                    # Update the DB with the *truncated* final text that was sent
-                  await self.db.update_message(assistant_message.id, final_text)
-              else:
-                  final_text = assistant_message.content
-                  # DB message should already match final_text here
+              # Ensure the in-memory message object has the final accumulated content
+              assistant_message.content = accumulated_content
 
-              await self.bot.edit_message_text(
-                  chat_id=chat_id,
-                  message_id=sent_message_id,
-                  text=final_text # Send the final, potentially truncated, text
-              )
+              # --- Final DB Update & Telegram Edit ---
+              final_text_for_display_and_db = accumulated_content # Start with full content
 
-              logging.info(f"Replied chat {chat_id} with message length {len(final_text)}")
+              # Apply truncation logic if needed
+              if len(accumulated_content) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                  # Define suffix clearly
+                  truncation_suffix = "...\n\n(Type \"continue\" to view more.)"
+                  # Calculate max length for the content part
+                  max_content_len = max(0, TELEGRAM_MAX_MESSAGE_LENGTH - len(truncation_suffix))
+                  # Truncate content
+                  truncated_content = accumulated_content[:max_content_len]
+                  # TODO: (Optional Future Improvement) Implement smarter truncation (e.g., word boundary)
+                  final_text_for_display_and_db = truncated_content + truncation_suffix
+
+              # Update DB *once* with the final text (truncated or full)
+              await self.db.update_message(assistant_message.id, final_text_for_display_and_db)
+
+              # Final Telegram Edit: Show the final message without "Generating..."
+              try:
+                  await self.bot.edit_message_text(
+                      chat_id=chat_id,
+                      message_id=sent_message_id,
+                      text=final_text_for_display_and_db # Send the final, potentially truncated, text
+                  )
+                  logging.info(f"Replied chat {chat_id} with final message length {len(final_text_for_display_and_db)}")
+              except Exception as final_edit_err:
+                  # Log error if the final edit fails, but proceed (DB is already updated)
+                  logging.error(f"Error performing final edit for chat {chat_id} (msg_id: {sent_message_id}): {final_edit_err}")
+                  # User might see last "Generating..." message, but DB is correct.
 
       except TimeoutError:
+          # Handle timeout specifically
+          logging.warning(f"Timeout generating response for chat {chat_id} (msg_id: {sent_message_id})")
           retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
-          await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Generation timed out.", reply_markup=retry_markup)
-          logging.info(f"Timed out generating response for chat {chat_id}")
+          try:
+              await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Generation timed out.", reply_markup=retry_markup)
+          except Exception as e_timeout_edit:
+                logging.error(f"Error sending timeout message for chat {chat_id}: {e_timeout_edit}")
       except Exception as e:
+          # General error handling for the stream/completion process
+          logging.exception(f"Error generating response for chat {chat_id} (msg_id: {sent_message_id}): {e}")
           retry_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Retry', callback_data='/retry')]])
-          # Avoid sending overly detailed errors to the user
-          await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Sorry, an error occurred while generating the response.", reply_markup=retry_markup)
-          logging.exception(f"Error generating response for chat {chat_id}: {e}") # Use logging.exception for stack trace
-
+          try:
+              # Avoid sending overly detailed errors to the user
+              await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Sorry, an error occurred.", reply_markup=retry_markup)
+          except Exception as e_generic_edit:
+                logging.error(f"Error sending generic error message for chat {chat_id}: {e_generic_edit}")
 
       # Ensure current conversation is set even if errors occurred before title generation
       self.context.chat_state.current_conversation = conversation
