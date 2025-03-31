@@ -115,7 +115,7 @@ class Conversation:
       """
       db_conversation = DBConversation(
           id=self.id,
-          chat_id=self.chat_id,  # Assuming you add this attribute
+          chat_id=None,
           title=self.title,
           started_at=self.started_at,
           updated_at=datetime.now()
