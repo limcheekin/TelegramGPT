@@ -393,15 +393,6 @@ class ChatManager:
                   text=final_text # Send the final, potentially truncated, text
               )
 
-              # Update conversation title (assuming assistant_message has content)
-              if conversation.title is None and len(conversation.messages) >= 2: # Need user+assistant msg
-                  # Consider potential errors during title generation
-                  try:
-                      await self.__generate_and_set_title(conversation)
-                  except Exception as title_e:
-                      logging.error(f"Failed to generate title for conversation {conversation.id}: {title_e}")
-
-
               logging.info(f"Replied chat {chat_id} with message length {len(final_text)}")
 
       except TimeoutError:
@@ -418,43 +409,6 @@ class ChatManager:
       # Ensure current conversation is set even if errors occurred before title generation
       self.context.chat_state.current_conversation = conversation
       self.__add_timeout_task()
-
-  async def __generate_and_set_title(self, conversation: Conversation):
-      """Helper function to generate and set the conversation title."""
-      # Check if title generation is feasible/needed
-      if conversation.title is not None or len(conversation.messages) < 2:
-            return
-
-      logging.info(f"Attempting to generate title for conversation {conversation.id}")
-      # Assuming gpt client has a method for single requests or adapt __request
-      # This might need adjustment based on gemini.py/__request structure
-      # Ensure we only send relevant messages for title generation (e.g., first user/assistant pair)
-      messages_for_title = conversation.messages[:2] # Example: Use first user msg and first assistant reply
-
-      try:
-          # This logic needs to align with how gemini.py/__request or gpt.py/__request works
-          # It might require adapting those methods or calling them appropriately
-          # For gemini.py, it seems __request takes SystemMessage + list[Message]
-          prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the beginning or the end.'
-          # Assuming self.__gpt has an equivalent synchronous or async method for single request
-          # This part needs careful implementation based on the chosen LLM client interface
-          # Example placeholder:
-          title = await self.__gpt.generate_title(messages_for_title) # Placeholder for actual call
-
-          if title:
-                title = title.strip().strip('.,?!"\'') # Clean up title
-                conversation.title = title
-                await self.db.update_conversation(conversation.id, conversation.title)
-                logging.info(f"Set title for conversation {conversation.id}: '{title}'")
-          else:
-                logging.warning(f"Title generation returned empty for conversation {conversation.id}")
-
-      except Exception as e:
-          # Log error but don't let title generation failure break the main flow
-          logging.error(f"Error during title generation for conversation {conversation.id}: {e}")
-          # Optionally set a default title or leave it None
-          # conversation.title = "Untitled Conversation"
-          # await self.db.update_conversation(conversation.id, conversation.title)
 
   async def __read_out_message(self, message: AssistantMessage):
     chat_id = self.context.chat_id
