@@ -4,7 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from gemini import GPTClient
-from models import AssistantMessage, Conversation, Role, SystemMessage, UserMessage
+from models import AssistantMessage, Conversation, Role, SystemMessage, UserMessage, RateLimitException
 from speech import SpeechClient
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ExtBot
@@ -444,6 +444,20 @@ class ChatManager:
               await self.bot.edit_message_text(chat_id=chat_id, message_id=sent_message_id, text="Generation timed out.", reply_markup=retry_markup)
           except Exception as e_timeout_edit:
                 logging.error(f"Error sending timeout message for chat {chat_id}: {e_timeout_edit}")
+      except RateLimitException as e_rate_limit:
+          # Handle the common Rate Limit Error
+          # Log the specific underlying error if available
+          original_err_msg = f" (Original: {e_rate_limit.original_exception})" if e_rate_limit.original_exception else ""
+          logging.warning(f"API Rate limit/quota exceeded for chat {chat_id} (msg_id: {sent_message_id}): {e_rate_limit}{original_err_msg}")
+          try:
+              # Inform the user politely
+              await self.bot.edit_message_text(
+                  chat_id=chat_id,
+                  message_id=sent_message_id,
+                  text="⏳ The bot is currently busy or has reached a usage limit. Please try again in a few moments."
+              )
+          except Exception as e_quota_edit:
+                logging.error(f"Error sending rate limit error message for chat {chat_id}: {e_quota_edit}")      
       except Exception as e:
           # General error handling for the stream/completion process
           logging.exception(f"Error generating response for chat {chat_id} (msg_id: {sent_message_id}): {e}")

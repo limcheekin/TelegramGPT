@@ -5,6 +5,8 @@ from typing import AsyncGenerator, cast
 from google import genai
 from google.genai import types
 from models import AssistantMessage, Conversation, Message, SystemMessage, UserMessage
+from google.api_core import exceptions as google_exceptions
+from models import RateLimitException
 
 @dataclass
 class GPTOptions:
@@ -56,26 +58,50 @@ class GPTClient:
         logging.debug(f"Current conversation for chat {conversation.id}: {conversation}")
 
         assistant_message = None
+        try:
+            async for chunk in self.__stream(([system_message] if system_message else []) + conversation.messages):
+                if not assistant_message:
+                    assistant_message = AssistantMessage(sent_msg_id, '', user_message.id)
+                    conversation.messages.append(assistant_message)
 
-        async for chunk in self.__stream(([system_message] if system_message else []) + conversation.messages):
-            if not assistant_message:
-                assistant_message = AssistantMessage(sent_msg_id, '', user_message.id)
-                conversation.messages.append(assistant_message)
-
-            assistant_message.content += chunk
-            yield assistant_message
-        
+                assistant_message.content += chunk
+                yield assistant_message
+        except RateLimitException: # Allow RateLimitException from __stream to pass through
+            raise
+        except Exception as e:
+             # Catch other potential errors during the completion setup/yield if needed
+             logging.error(f"Error during message completion processing for {conversation.id}: {e}")
+             raise # Re-raise other errors
+               
         logging.info(f"len(conversation.messages): {len(conversation.messages)}")
-        if conversation.title is None and len(conversation.messages) < 3:
+
+        if conversation.title is None and assistant_message and len(conversation.messages) < 3 : # Ensure assistant message exists
             async def set_title(conversation: Conversation):
                 prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the begining or the end.'
-                title = await self.__request(SystemMessage(prompt), conversation.messages)
-                title = title.strip()
-                conversation.title = title
+                try:
+                    # Ensure messages sent to __request include the latest assistant message
+                    messages_for_title = conversation.messages # Includes User + Assistant
+                    title = await self.__request(SystemMessage(prompt), messages_for_title)
+                    title = title.strip()
+                    if title: # Avoid setting empty titles
+                        conversation.title = title
+                        logging.info(f"Set title for conversation {conversation.id}: '{title}'")
+                        # Optionally update DB here if title generation is critical path
+                        # await self.db.update_conversation(conversation.id, title) # Needs db instance passed or accessible
+                    else:
+                         logging.warning(f"Title generation for conversation {conversation.id} produced empty result.")
+                except RateLimitException:
+                    logging.warning(f"Rate limit hit during title generation for {conversation.id}. Title not set.")
+                    # Don't raise here, title is non-critical
+                except Exception as title_e:
+                    logging.error(f"Error generating title for conversation {conversation.id}: {title_e}")
+                    # Don't raise here, title is non-critical
 
-                logging.info(f"Set title for conversation {conversation}: '{title}'")
-
-            await set_title(conversation)
+            # It seems title generation wasn't awaited properly before.
+            # Consider awaiting it if the title *must* be set before __complete returns,
+            # otherwise keep as create_task for background execution.
+            # await set_title(conversation)
+            asyncio.create_task(set_title(conversation)) # If background is okay
 
         logging.info(f"Completed message for chat {conversation.id}, message: '{assistant_message}'")
 
@@ -103,7 +129,10 @@ class GPTClient:
                 ),
                 timeout=60
             )
-            return response.text or ""
+            return response.text or ""        
+        except google_exceptions.ResourceExhausted as e:
+            logging.warning(f"Google API rate limit/quota exceeded in __request: {e}")
+            raise RateLimitException(original_exception=e) from e        
         except Exception as e:
             logging.error(f"Error in generate content request: {str(e)}")
             raise
@@ -144,6 +173,9 @@ class GPTClient:
                 config=config
             ):
                 yield chunk.text
+        except google_exceptions.ResourceExhausted as e:
+            logging.warning(f"Google API rate limit/quota exceeded in __stream: {e}")
+            raise RateLimitException(original_exception=e) from e                
         except Exception as e:
             logging.error(f"Error in streaming content: {str(e)}")
             raise

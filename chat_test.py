@@ -1,9 +1,7 @@
-# chat_test.py
-
 import pytest
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, patch, call, ANY
+from models import RateLimitException
 
 # Import necessary classes from the project
 from chat import (
@@ -519,4 +517,51 @@ async def test_complete_final_edit_error(
 
     chat_manager._ChatManager__add_timeout_task.assert_called_once()
 
-# (Keep other tests, ensuring they also use MagicMock and assert_called_once_with for complete)
+async def test_complete_gpt_quota_error( # Renamed for clarity, but old name is fine too
+    chat_manager, mock_gpt_client, mock_bot, mock_db, sample_conversation, caplog
+):
+    """Test handling of RateLimitException raised by the gpt client."""
+    chat_id = chat_manager.context.chat_id
+    user_message = sample_conversation.messages[-1]
+    sent_message_id = 200
+    rate_limit_message = "API rate limit hit"
+
+    # Configure mock gpt client's complete method to raise RateLimitException
+    # Simulate that the client already caught the specific API error and raised the common one
+    async def error_streamer():
+        await asyncio.sleep(0.01) # Simulate some delay
+        raise RateLimitException(rate_limit_message) # Raise the common exception
+        yield # Unreachable
+
+    mock_gpt_client.complete.return_value = error_streamer()
+
+    await chat_manager._ChatManager__complete(sample_conversation, sent_message_id)
+
+    # Assertions
+    # 1. GPT Client called
+    mock_gpt_client.complete.assert_called_once_with(
+         sample_conversation, user_message, sent_message_id, None
+    )
+    # 2. DB not modified
+    mock_db.add_message.assert_not_awaited()
+    mock_db.update_message.assert_not_awaited()
+
+    # 3. Check bot edit for the user-facing rate limit message
+    mock_bot.edit_message_text.assert_awaited_once_with(
+        chat_id=chat_id,
+        message_id=sent_message_id,
+        text="⏳ The bot is currently busy or has reached a usage limit. Please try again in a few moments."
+    )
+
+    # 4. Check logs for the specific warning (should log the RateLimitException message)
+    assert "API Rate limit/quota exceeded" in caplog.text # Check generic part of message
+    assert f"chat {chat_id}" in caplog.text
+    assert rate_limit_message in caplog.text # Check the specific message passed to the exception
+
+    # 5. Conversation state
+    assert chat_manager.context.chat_state.current_conversation is sample_conversation
+    assert len(sample_conversation.messages) == 1
+
+    # 6. Timeout task scheduling attempted
+    chat_manager._ChatManager__add_timeout_task.assert_called_once()
+

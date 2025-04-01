@@ -32,6 +32,7 @@ typing_extensions==4.12.2
 urllib3==2.2.3
 yarl==1.15.4
 google-genai==1.2.0
+google-api-core==2.24.2
 SQLAlchemy==2.0.38
 asyncpg==0.30.0
 

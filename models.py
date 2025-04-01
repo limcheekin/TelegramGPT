@@ -3,6 +3,12 @@ from datetime import datetime
 from enum import Enum
 from db import DBConversation, DBMessage
 
+class RateLimitException(Exception):
+    """Custom exception for API rate limit or quota errors."""
+    def __init__(self, message="API rate limit or quota exceeded.", original_exception=None):
+        super().__init__(message)
+        self.original_exception = original_exception
+
 class Role(str, Enum):
   SYSTEM = 'system'
   ASSISTANT = 'assistant'
