@@ -1,209 +1,325 @@
-# TelegramGPT
+# TelegramGPT (Now with Google Gemini!)
 
-Telegram bot for ChatGPT using [official OpenAI API](https://platform.openai.com/docs/guides/chat). This project is experimental and subject to change.
+A Telegram bot powered by Google Gemini's API ([Vertex AI / Google AI Studio](https://ai.google.dev/)). This bot leverages PostgreSQL for persistent conversation history and can integrate with self-hosted Speech-to-Text (STT) and Text-to-Speech (TTS) services.
+
+*(Note: This project appears to have migrated from OpenAI's API and Azure Cognitive Services to Google Gemini and self-hosted speech services. The core logic reflects this change.)*
 
 - [Features](#features)
 - [Get Started](#get-started)
   - [1. Create a Telegram bot](#1-create-a-telegram-bot)
-  - [2. Create an OpenAI API key](#2-create-an-openai-api-key)
-  - [3. Deploy](#3-deploy)
+  - [2. Get a Google Gemini API key](#2-get-a-google-gemini-api-key)
+  - [3. Set up PostgreSQL](#3-set-up-postgresql)
+  - [4. (Optional) Set up STT/TTS Services](#4-optional-set-up-stttts-services)
+  - [5. Deploy](#5-deploy)
 - [Usage](#usage)
+  - [Conversation](#conversation)
+  - [Voice Messages](#voice-messages)
 - [Advanced Deployment](#advanced-deployment)
+  - [Configuration Environment Variables](#configuration-environment-variables)
   - [Restrict Bot to Specific Chats](#restrict-bot-to-specific-chats)
   - [Conversation Management](#conversation-management)
-  - [Data Persistence](#data-persistence)
-  - [Telegram Bot Webhook](#telegram-bot-webhook)]
-  - [Support Voice Messages with Azure Cognitive Services](#support-voice-messages-with-azure-cognitive-services)]
-  - [Use a Different Model](#use-a-different-model)
-  - [Azure OpenAI Service](#azure-openai-service)
+  - [Data Persistence (PostgreSQL)](#data-persistence-postgresql)
+  - [Telegram Bot Webhook](#telegram-bot-webhook)
+  - [Support Voice Messages with Custom STT/TTS](#support-voice-messages-with-custom-stttts)
+  - [Use a Different Gemini Model](#use-a-different-gemini-model)
+  - [Gemini Cached Content (System Prompt & Context File)](#gemini-cached-content-system-prompt--context-file)
   - [Network Proxy](#network-proxy)
   - [Example Docker Compose File](#example-docker-compose-file)
+  - [Edit Throttling](#edit-throttling)
 - [Options Reference](#options-reference)
 
 ## Features
 
-- All the powers of ChatGPT
-- Voice messages powered by Azure Cognitive Services
-- Conversation history
-- Restrict bot to specific chats
-- Resume previous conversations
+-   Powered by **Google Gemini** models (configurable)
+-   **Streaming responses**: See the bot typing in real-time.
+-   **Voice message** support using custom/self-hosted STT (e.g., [FastWhisper API](https://github.com/jhj0517/Whisper-API)) and TTS (e.g., Piper TTS via [LocalAI](https://github.com/mudler/LocalAI) or similar OpenAI-compatible endpoint)
+-   Persistent **conversation history** stored in PostgreSQL
+-   **Resume** previous conversations using `/resume_<id>`
+-   Automatic **conversation titling** (generates a title after the first exchange)
+-   Restrict bot to specific chats
+-   Conversations can automatically time out
+-   Supports Gemini's cached content feature for optimized system prompts and context files.
 
 ## Get Started
 
 ### 1. Create a Telegram bot
 
-Create a Telegram bot using [@BotFather](https://t.me/BotFather) and get the token.
+Create a Telegram bot using [@BotFather](https://t.me/BotFather) and get the **Telegram Bot Token**.
 
-### 2. Create an OpenAI API key
+### 2. Get a Google Gemini API key
 
-Go to [OpenAI Dashboard](https://platform.openai.com/account/api-keys) and create an API key.
+Go to [Google AI Studio](https://aistudio.google.com/app/apikey) (or Google Cloud Vertex AI) and create an API key.
 
-### 3. Deploy
+### 3. Set up PostgreSQL
 
-Docker: 
+This bot requires a PostgreSQL database for storing conversations and messages. Set one up and obtain the **Database Connection String (DSN)**. Example DSN format: `postgresql+asyncpg://user:password@host:port/database`
+
+### 4. (Optional) Set up STT/TTS Services
+
+If you want voice message support:
+1.  **Speech-to-Text (STT):** Set up an STT service compatible with the OpenAI Transcription API format. [FastWhisper API](https://github.com/jhj0517/Whisper-API) is one option. Note its **Base URL**, **API Key** (if any), and desired **Model**.
+2.  **Text-to-Speech (TTS):** Set up a TTS service compatible with the OpenAI Audio Speech API format. Using [LocalAI](https://github.com/mudler/LocalAI) with a backend like Piper TTS is one way. Note its **Base URL**, **API Key** (if any), **Model**, **Voice**, and **Backend** identifier.
+
+### 5. Deploy
+
+The recommended deployment method is using Docker or Docker Compose.
+
+**Docker:**
 
 ```bash
-docker build -t telegram-gpt github.com/zhuorantan/TelegramGPT#main
-docker run --rm telegram-gpt --openai-api-key "<OPENAI_API_KEY>" --telegram-token "<TELEGRAM_TOKEN>"
+# Clone the repository (if needed)
+# git clone https://github.com/limcheekin/TelegramGPT.git
+# cd TelegramGPT
+
+# Build the image
+docker build -t telegram-gemini-bot .
+
+# Run the container (replace placeholders)
+docker run --rm --name telegram-gemini-bot \
+  -e TELEGRAM_GPT_TELEGRAM_TOKEN="<YOUR_TELEGRAM_TOKEN>" \
+  -e TELEGRAM_GPT_OPENAI_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  -e POSTGRES_DSN="<YOUR_POSTGRES_DSN>" \
+  # --- Optional Chat ID Restriction ---
+  # -e TELEGRAM_GPT_CHAT_ID_0="<ALLOWED_CHAT_ID_1>" \
+  # -e TELEGRAM_GPT_CHAT_ID_1="<ALLOWED_CHAT_ID_2>" \
+  # --- Optional STT/TTS ---
+  # -e FAST_WHISPER_API_BASE_URL="<STT_BASE_URL>" \
+  # -e FAST_WHISPER_API_MODEL="<STT_MODEL_NAME>" \
+  # -e TTS_BASE_URL="<TTS_BASE_URL>" \
+  # -e TTS_MODEL="<TTS_MODEL_NAME>" \
+  # -e TTS_VOICE="<TTS_VOICE_NAME>" \
+  # -e TTS_BACKEND="<TTS_BACKEND_NAME>" \
+  # -e LANGUAGE="en" \
+  # --- Other Options ---
+  # -e TELEGRAM_GPT_OPENAI_MODEL_NAME="gemini-1.5-pro-latest" \
+  # -e TELEGRAM_GPT_CONVERSATION_TIMEOUT="300" \
+  # -e TELEGRAM_GPT_SYSTEM_MESSAGE_FILE="/path/in/container/to/system.txt" \
+  # -e TELEGRAM_GPT_CONTEXT_FILE="/path/in/container/to/context.pdf" \
+  telegram-gemini-bot
+```
+*(**Note:** The environment variable `TELEGRAM_GPT_OPENAI_API_KEY` is used for the **Google Gemini** API key due to historical naming).*
+
+**Docker Compose:**
+
+Create a `.env` file based on `example.env` and fill in your credentials:
+
+```dotenv
+# .env file
+# Core
+TELEGRAM_GPT_TELEGRAM_TOKEN=<YOUR_TELEGRAM_TOKEN>
+TELEGRAM_GPT_OPENAI_API_KEY=<YOUR_GEMINI_API_KEY> # Note: For Gemini Key
+POSTGRES_DSN=<YOUR_POSTGRES_DSN>
+
+# LLM Model (Optional)
+TELEGRAM_GPT_OPENAI_MODEL_NAME=gemini-1.5-flash-latest # Or another Gemini model
+
+# Chat Restrictions (Optional)
+# TELEGRAM_GPT_CHAT_ID_0=<ALLOWED_CHAT_ID_1>
+# TELEGRAM_GPT_CHAT_ID_1=<ALLOWED_CHAT_ID_2>
+
+# Conversation Timeout (Optional)
+# TELEGRAM_GPT_CONVERSATION_TIMEOUT=600 # seconds
+
+# Voice STT/TTS (Optional)
+FAST_WHISPER_API_BASE_URL=<YOUR_STT_BASE_URL> # e.g., http://stt-api:8000
+FAST_WHISPER_API_KEY=<YOUR_STT_API_KEY> # Optional
+FAST_WHISPER_API_MODEL=base # e.g., base, small, medium
+TTS_BASE_URL=<YOUR_TTS_BASE_URL>/v1 # e.g., http://tts-api:8080/v1
+TTS_API_KEY=<YOUR_TTS_API_KEY> # Optional
+TTS_MODEL=<YOUR_TTS_MODEL> # e.g., tts-model-name
+TTS_VOICE=<YOUR_TTS_VOICE> # e.g., en-us-amy
+TTS_BACKEND=<YOUR_TTS_BACKEND> # e.g., piper
+LANGUAGE=en # Language for STT/TTS
+
+# Gemini Caching (Optional)
+# TELEGRAM_GPT_SYSTEM_MESSAGE_FILE=/data/system_prompt.txt # Needs volume mapping
+# TELEGRAM_GPT_CONTEXT_FILE=/data/context_document.pdf # Needs volume mapping
 ```
 
-Docker Compose:
+Use the provided `docker-compose.yaml` (or adapt it):
 
 ```yaml
+# docker-compose.yaml
 services:
   telegram-gpt:
-    build: github.com/zhuorantan/TelegramGPT#main
+    build: .
     container_name: telegram-gpt
     restart: unless-stopped
-    environment:
-      - TELEGRAM_GPT_OPENAI_API_KEY=<OPENAI_API_KEY>
-      - TELEGRAM_GPT_TELEGRAM_TOKEN=<TELEGRAM_TOKEN>
+    volumes:
+      # Mount local files for Gemini Caching if needed
+      # - ./my_system_prompt.txt:/data/system_prompt.txt:ro
+      # - ./my_context_doc.pdf:/data/context_document.pdf:ro
+      # Optional: Mount a directory if needed for other data (though primary data is in DB)
+      # - telegram-gpt-data:/data
+    env_file:
+      - .env # Load variables from .env file
+    # If using webhook, expose port and configure network
+    # expose:
+    #   - 80
+    # ports:
+    #   - "8080:80" # Map host port 8080 to container port 80
+
+# Optional volume definition if using ./data mount
+# volumes:
+#   telegram-gpt-data:
 ```
 
-The bot will start with the default configuration. Default behaviors are:
+Then run: `docker compose up -d`
 
-- Respond to messages from any chat
-- Conversations won't automatically time out
-- Data won't be persisted
-- Bot will use polling
-- OpenAI `gpt-3.5-turbo` model will be used
-- The bot won't respond to voice messages or read out messages
+**Default Behaviors:**
+- Responds to messages only from chats specified by `TELEGRAM_GPT_CHAT_ID_*` (or all chats if none are specified).
+- Uses Google Gemini `gemini-1.5-flash-latest` model.
+- Requires a PostgreSQL database connection (`POSTGRES_DSN`).
+- Conversations don't automatically time out unless `TELEGRAM_GPT_CONVERSATION_TIMEOUT` is set.
+- Bot uses polling unless webhook options are configured.
+- Voice messages are disabled unless STT/TTS services are configured.
 
-To change the default behavior, see [Advanced Deployment](#advanced-deployment).
-
-> **Caution**: The bot will respond to any message sent to it. This may induce a significant OpenAI API cost since Telegram bots are public and anyone who knows the bot's username can send messages to it. If you don't want the bot to respond to messages from specific chats, see [Restrict Bot to Specific Chats](#restrict-bot-to-specific-chats).
+> **Caution**: If you don't restrict the bot using `TELEGRAM_GPT_CHAT_ID_*`, it will respond to messages from any chat. This can incur costs on the Gemini API as Telegram bots are potentially public.
 
 ## Usage
 
 ### Conversation
 
-Send a message to the bot and it will respond with a message generated by ChatGPT.
-Use the `/retry` command to regenerate the response for the last message.
-
-In a conversation, the bot will remember the previous messages and use them as context to generate the response.
-To clear the context, and start a new conversation, use the `/new` command. To have conversations automatically expire, see [Conversation Management](#conversation-management).
-
-To view the conversation history, send the `/history` command.
-
-### Mode
-
-You can define different modes for the bot to use. A mode is a system message that is included at the beginning of the conversation.
-Refer to [OpenAI API documentation](https://platform.openai.com/docs/guides/chat/instructing-chat-models) for more information about system message.
-
-Use the `/mode` command to select and manage modes. The bot would respond with a list of available modes. Tap on a mode to select it.
-There would also be buttons to create a new mode, edit a mode, or clear mode selection.
+-   Send a message to the bot, and it will respond with a message generated by Gemini.
+-   The bot streams responses, so you'll see it "typing".
+-   Use the `/retry` command to regenerate the response for the *last user message*.
+-   The bot remembers the conversation history within a session.
+-   After the first user message and bot response, the bot will automatically generate a title for the conversation.
+-   To clear the context and start a fresh conversation, use the `/new` command.
+-   To view previous conversations (stored in the database), send the `/history` command. This will list conversations with their titles and IDs.
+-   To resume a previous conversation, use the `/resume_<conversation_id>` command (e.g., `/resume_123`) or click the link provided in the `/history` output.
 
 ### Voice Messages
 
-Refer to [Support Voice Messages with Azure Cognitive Services](#support-voice-messages-with-azure-cognitive-services) for instructions on how to enable voice messages.
-When enabled, the bot would respond to voice messages with voice messages. It would first convert the voice message to text, then send the text to OpenAI API, and finally convert the response to voice message.
+Refer to [Support Voice Messages with Custom STT/TTS](#support-voice-messages-with-custom-stttts) for setup instructions.
 
-You can also reply to a text messaged sent by the bot with `/say` command to have the bot convert the message to voice message.
+When enabled:
+-   Send a voice message to the bot.
+-   It converts the voice message to text using your configured STT service.
+-   The text is sent to the Gemini API.
+-   The Gemini response text is converted back to a voice message using your configured TTS service.
+-   You can also reply to a text message sent by the bot with the `/say` command to have the bot read that specific message aloud using the TTS service.
 
 ## Advanced Deployment
 
-Here is an empty `docker-compose.yml` file with all the available options. You can copy and paste the options you need to customize the bot.
+### Configuration Environment Variables
 
-```yaml
-services:
-  telegram-gpt:
-    build: github.com/zhuorantan/TelegramGPT#main
-    container_name: telegram-gpt
-    restart: unless-stopped
-    volumes:
-      - telegram-gpt:/data
-    expose:
-      - 80
-    environment:
-      - TELEGRAM_GPT_OPENAI_API_KEY=<OPENAI_API_KEY> # Required
-      - TELEGRAM_GPT_TELEGRAM_TOKEN=<TELEGRAM_TOKEN> # Required
-      - TELEGRAM_GPT_CHAT_ID_0=<CHAT_ID>
-      - TELEGRAM_GPT_CHAT_ID_1=<CHAT_ID>
-      - TELEGRAM_GPT_CONVERSATION_TIMEOUT=300
-      # - TELEGRAM_GPT_MAX_MESSAGE_COUNT=32
-      # - TELEGRAM_GPT_WEBHOOK_URL=https://example.com
-      # - TELEGRAM_GPT_OPENAI_MODEL_NAME=azure-gpt-35-turbo
-      # - TELEGRAM_GPT_AZURE_OPENAI_ENDPOINT=https://example.openai.azure.com
-      # - TELEGRAM_GPT_AZURE_SPEECH_KEY=<AZURE_SPEECH_KEY>
-      # - TELEGRAM_GPT_AZURE_SPEECH_REGION=westus2
-
-volumes:
-  telegram-gpt:
-```
+The bot is primarily configured through environment variables, as shown in the `Get Started` section and the `Options Reference` table below. You can set these directly when using `docker run` or place them in a `.env` file when using `docker-compose`.
 
 ### Restrict Bot to Specific Chats
 
-Use the `--chat-id` option to restrict the bot to specific chats. To allow multiple chats, set `--chat-id` multiple times.
-If no `--chat-id` is set, the bot will accept messages from any chat.
+Use the `TELEGRAM_GPT_CHAT_ID_<n>` environment variables (e.g., `TELEGRAM_GPT_CHAT_ID_0`, `TELEGRAM_GPT_CHAT_ID_1`, etc.) to restrict the bot to specific chats.
 
-You can get your chat ID either by checking the log of `TelegramGPT` or by sending a message to the bot and going to this URL to view the chat ID:
+If no `TELEGRAM_GPT_CHAT_ID_*` variables are set, the bot will accept messages from any chat (use with caution).
 
-`https://api.telegram.org/bot<TELEGRAM_TOKEN>/getUpdates`
-
-The chat ID would be the `id` field in the JSON response.
+You can find a chat ID by:
+1.  Sending a message to your bot *after* it's running (even if restricted). Check the bot's console logs for messages like `Message received for chat XXXXXX but ignored...` or successful processing logs which include the chat ID.
+2.  Alternatively, send a message to the bot and then visit `https://api.telegram.org/bot<YOUR_TELEGRAM_TOKEN>/getUpdates` in your browser. Look for the `chat` object and its `id` field in the JSON response.
 
 ### Conversation Management
 
-By default, all messages would be included in a single conversation, until the conversation is cleared with the `/new` command.
-To automatically expire conversations after a timeout, set the `--conversation-timeout` option to the number of seconds after which a new conversation should be started.
-For example, to expire conversations after 5 minutes, set `--conversation-timeout 300`.
+-   **Timeout:** To automatically end a conversation after a period of inactivity (starting a new one on the next message), set the `TELEGRAM_GPT_CONVERSATION_TIMEOUT` environment variable to the desired number of seconds (e.g., `300` for 5 minutes). If not set, conversations persist until `/new` is used.
+-   **History Limit (LLM Context):** The `GPTOptions` in `gemini.py` has a `max_message_count` parameter (not directly exposed via env var in `telegram-gpt.py` currently, but could be added). This limits how many *past messages* are sent to the Gemini API in each request to manage token usage. The full history is still stored in the database.
 
-By default, there is no limit to the number of messages in a conversation. To limit the number of messages, set the `--max-message-count` option to the maximum number of messages to be included in a conversation.
-Earlier messages would be discarded when the limit is reached.
+### Data Persistence (PostgreSQL)
 
-### Data Persistence
-
-The bot won't persist any data by default, and all conversations and mode settings would be lost when the bot is restarted.
-To persist these data, set the `--data-dir` option to a path to a directory where the data should be stored.
-
-This option would be default to `/data` in the Docker image. This directory should be mounted to a persistent volume.
+Conversation history, messages, and active conversation state per chat are persisted in a PostgreSQL database.
+-   **Requirement:** The `POSTGRES_DSN` environment variable **must** be set with a valid PostgreSQL connection string.
+-   **Tables Created:** `conversations`, `messages`, `active_conversations`.
+-   The old `--data-dir` option seems deprecated for primary data persistence.
 
 ### Telegram Bot Webhook
 
-By default, the bot uses polling to receive messages. You can use a webhook to have Telegram servers send messages to your server.
-This requires a public IP address, a domain name, and a reverse proxy with SSL support. Refer to [Marvin's Marvellous Guide to All Things Webhook](https://core.telegram.org/bots/webhooks) for more information about webhook.
+By default, the bot uses polling. To use webhooks (requires a publicly accessible server with HTTPS):
+1.  Set the `TELEGRAM_GPT_WEBHOOK_URL` environment variable to your public bot URL (e.g., `https://yourdomain.com/webhookpath`). Telegram only supports ports `443`, `80`, `88`, `8443` for webhooks.
+2.  Set the `TELEGRAM_GPT_WEBHOOK_LISTEN_ADDRESS` to the IP address and port the bot should listen on *inside the container* (e.g., `0.0.0.0:80`).
+3.  Configure a reverse proxy (like Nginx or Caddy) to handle HTTPS termination and forward requests from the public `TELEGRAM_GPT_WEBHOOK_URL` to the bot's internal `TELEGRAM_GPT_WEBHOOK_LISTEN_ADDRESS`.
 
-To enable webhook mode, set the `--webhook-url` to the public accessible URL of the bot. It must be able to receive HTTPS requests and requests must be forwarded to the bot via HTTP.
+Refer to the official [Telegram Bot Webhook Guide](https://core.telegram.org/bots/webhooks) for more details.
 
-The bot would listen on `0.0.0.0:80` by default. To change the listening address, set the `--webhook-listen-address` option. Only ports `443`, `80`, `88` and `8443` are allowed.
+### Support Voice Messages with Custom STT/TTS
 
-### Support Voice Messages with Azure Cognitive Services
+This bot uses external, potentially self-hosted, services for voice processing, configured via environment variables:
 
-`TelegramGPT` can convert voice messages to text and text to voice messages using [Azure Cognitive Services](https://azure.microsoft.com/en-us/services/cognitive-services).
-Follow [this guide](https://learn.microsoft.com/en-us/azure/cognitive-services/speech-service/get-started-speech-to-text) to create a Speech resource and get the API key and region.
+1.  **Speech-to-Text (STT):**
+    *   `FAST_WHISPER_API_BASE_URL`: Base URL of your STT service (e.g., `http://192.168.1.100:8000`). Must be compatible with OpenAI's transcription API format.
+    *   `FAST_WHISPER_API_KEY`: API key for the STT service (optional, depends on the service).
+    *   `FAST_WHISPER_API_MODEL`: The specific STT model to use (e.g., `base`, `small`, `medium`).
+    *   `LANGUAGE`: Language code (e.g., `en`, `es`) used for STT.
 
-To enable voice messages, set the `--azure-speech-api-key` to the API key. Set the `--azure-speech-region` to the region of the Speech resource if it's different from `westus`.
+2.  **Text-to-Speech (TTS):**
+    *   `TTS_BASE_URL`: Base URL of your TTS service (e.g., `http://192.168.1.101:8080/v1`). Must be compatible with OpenAI's speech generation API format.
+    *   `TTS_API_KEY`: API key for the TTS service (optional, depends on the service).
+    *   `TTS_MODEL`: The specific TTS model/engine name recognized by your service.
+    *   `TTS_VOICE`: The specific voice name recognized by your service.
+    *   `TTS_BACKEND`: Specific backend identifier if required by your TTS service (e.g., some LocalAI setups).
+    *   `LANGUAGE`: Language code (e.g., `en`, `es`) used for TTS.
 
-### Use a Different Model
+If both `FAST_WHISPER_API_BASE_URL` and `TTS_BASE_URL` are provided, voice support is enabled.
 
-By default, the bot uses the `gpt-3.5-turbo` model. To use a different chat completion model, set the `--openai-model-name` option to the model name.
-Refer to [OpenAI API documentation](https://platform.openai.com/docs/models/model-endpoint-compatibility) for a list of available models.
+### Use a Different Gemini Model
 
-### Azure OpenAI Service
+By default, the bot uses `gemini-1.5-flash-latest`. To use a different Gemini chat model (e.g., `gemini-1.5-pro-latest`), set the `TELEGRAM_GPT_OPENAI_MODEL_NAME` environment variable. Refer to [Google AI Gemini models documentation](https://ai.google.dev/models/gemini) for available models.
 
-Alternative to using OpenAI API, you can use [Azure OpenAI Service](https://azure.microsoft.com/en-us/products/cognitive-services/openai-service) to generate responses.
-Follow [this guide](https://learn.microsoft.com/en-us/azure/cognitive-services/openai/chatgpt-quickstart) to create an Azure OpenAI Service resource, deploy a model, and get the API key and endpoint.
+### Gemini Cached Content (System Prompt & Context File)
 
-To use Azure OpenAI Service, set the `--azure-openai-endpoint` option to the endpoint of the Azure OpenAI Service resource. Set the `--openai-api-key` option to the API key. Set the `--openai-model-name` option to the model deployment name.
+Gemini offers a caching feature to reuse processed system instructions and large context files, potentially saving tokens and improving latency.
+-   `TELEGRAM_GPT_SYSTEM_MESSAGE_FILE`: Path *inside the container* to a text file containing the system prompt/instructions.
+-   `TELEGRAM_GPT_CONTEXT_FILE`: Path *inside the container* to a file (e.g., PDF, TXT) to be used as context.
+
+If you use these, ensure the files are accessible within the container (e.g., via Docker volumes). The bot will upload the file and create a cache on startup. *Note: Caches might expire based on Gemini's policies or TTL if set.*
 
 ### Network Proxy
 
-To use proxy, add `-e http_proxy=http://<proxy>:<port>` and `-e https_proxy=http://<proxy>:<port>` to the `docker run` command.
-For Docker Compose, add `http_proxy` and `https_proxy` environment variables to the `environment` section.
+If you need to use an HTTP/HTTPS proxy, configure the standard `http_proxy` and `https_proxy` environment variables for the container.
+
+Docker run:
+```bash
+docker run -e http_proxy="http://<proxy_ip>:<port>" -e https_proxy="http://<proxy_ip>:<port>" ... telegram-gemini-bot
+```
+
+Docker Compose:
+```yaml
+services:
+  telegram-gpt:
+    # ... other config ...
+    environment:
+      # ... other env vars ...
+      http_proxy: "http://<proxy_ip>:<port>"
+      https_proxy: "http://<proxy_ip>:<port>"
+```
+
+### Example Docker Compose File
+
+See the `docker-compose.yaml` file in the repository and the example in the [Get Started](#5-deploy) section. Remember to create a corresponding `.env` file.
+
+### Edit Throttling
+
+To prevent hitting Telegram API rate limits when editing messages for streaming responses, the bot throttles edits. You can adjust the minimum interval (in seconds) between edits using the environment variable `TELEGRAM_GPT_EDIT_THROTTLE_INTERVAL` (default is `0.5`). Setting it lower might provide smoother streaming but increases the risk of rate limiting.
 
 ## Options Reference
 
-| Option | Environment Variable | Description | Default |
-|-|-|-|-|
-| `--openai-api-key` | `TELEGRAM_GPT_OPENAI_API_KEY` | OpenAI API key created from [OpenAI Platform](https://platform.openai.com/account/api-keys). If `--azure-openai-endpoint` is specified, this is the Azure OpenAI Service API key. | |
-| `--telegram-token` | `TELEGRAM_GPT_TELEGRAM_TOKEN` | Telegram bot token. Get it from [@BotFather](https://t.me/BotFather). | |
-| `--chat-id` | `TELEGRAM_GPT_CHAT_ID`, `TELEGRAM_GPT_CHAT_ID_*` | IDs of Allowed chats. Can be specified multiple times. If not specified, the bot will respond to all chats. | |
-| `--conversation-timeout` | `TELEGRAM_GPT_CONVERSATION_TIMEOUT` | Timeout in seconds for a conversation to expire. If not specified, the bot will keep the conversation alive indefinitely. | |
-| `--max-message-count` | `TELEGRAM_GPT_MAX_MESSAGE_COUNT` | Maximum number of messages to keep in the conversation. Earlier messages will be discarded with this option set. If not specified, the bot will keep all messages in the conversation. | |
-| `--data-dir` | `TELEGRAM_GPT_DATA_DIR` | Directory to store data. If not specified, data won't be persisted. | |
-| `--webhook-url` | `TELEGRAM_GPT_WEBHOOK_URL` | URL for telegram webhook requests. If not specified, the bot will use polling mode. | |
-| `--webhook-listen-address` | `TELEGRAM_GPT_WEBHOOK_LISTEN_ADDRESS` | Address to listen for telegram webhook requests in the format of <ip>:<port>. Only valid when `--webhook-url` is set. | `0.0.0.0:80` |
-| `--openai-model-name` | `TELEGRAM_GPT_OPENAI_MODEL_NAME` | Chat completion model name. If `--azure-openai-endpoint` is specified, this is the Azure OpenAI Service model deployment name. | `gpt-3.5-turbo` |
-| `--azure-openai-endpoint` | `TELEGRAM_GPT_AZURE_OPENAI_ENDPOINT` | Azure OpenAI Service endpoint. Set this option to use Azure OpenAI Service instead of OpenAI API. | |
-| `--azure-speech-key` | `TELEGRAM_GPT_AZURE_SPEECH_KEY` | Azure Speech Services API key. Set this option to enable voice messages powered by Azure speech-to-text and text-to-speech services. | |
-| `--azure-speech-region` | `TELEGRAM_GPT_AZURE_SPEECH_REGION` | Azure Speech Services region. Only valid when --azure-speech-key is set. | `westus` |
+| Environment Variable                      | Argument Equivalent                | Description                                                                                                 | Default                      | Required             |
+| :---------------------------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------------- | :--------------------------- | :------------------- |
+| `TELEGRAM_GPT_TELEGRAM_TOKEN`             | `--telegram-token`                 | Telegram bot token from @BotFather.                                                                         | -                            | **Yes**              |
+| `TELEGRAM_GPT_OPENAI_API_KEY`             | `--openai-api-key`                 | **Google Gemini API key** from Google AI Studio. (Name is historical).                                      | -                            | **Yes**              |
+| `POSTGRES_DSN`                            | *(None)*                           | PostgreSQL Database Connection String (e.g., `postgresql+asyncpg://user:pass@host:port/db`).                    | -                            | **Yes**              |
+| `TELEGRAM_GPT_OPENAI_MODEL_NAME`          | `--openai-model-name`              | Gemini chat model name.                                                                                     | `gemini-1.5-flash-latest`    | No                   |
+| `TELEGRAM_GPT_CHAT_ID_0`, `_1`, ...       | `--chat-id` (multiple)             | Allowed Telegram chat IDs. If none set, allows all chats.                                                   | Allow all                    | No                   |
+| `TELEGRAM_GPT_CONVERSATION_TIMEOUT`       | `--conversation-timeout`           | Timeout in seconds for conversations to expire.                                                             | `None` (No timeout)          | No                   |
+| `TELEGRAM_GPT_MAX_MESSAGE_COUNT`          | `--max-message-count`              | *Currently not used by `telegram-gpt.py` for BotOptions, but available in `GPTOptions`.*                     | `None`                       | No                   |
+| `TELEGRAM_GPT_DATA_DIR`                   | `--data-dir`                       | Directory for data (primarily used by Dockerfile, persistence now mainly via PostgreSQL).                   | `/data` (in container)       | No                   |
+| `TELEGRAM_GPT_WEBHOOK_URL`                | `--webhook-url`                    | Public URL for Telegram webhook requests (enables webhook mode).                                            | `None` (Polling mode)        | No                   |
+| `TELEGRAM_GPT_WEBHOOK_LISTEN_ADDRESS`     | `--webhook-listen-address`         | Internal IP:Port for the bot to listen on for webhook requests.                                             | `0.0.0.0:80`                 | No (if webhook used) |
+| `TELEGRAM_GPT_SYSTEM_MESSAGE_FILE`        | `--system-message-file`            | Path to file containing system instructions for Gemini cached content.                                      | `None`                       | No                   |
+| `TELEGRAM_GPT_CONTEXT_FILE`               | `--context-file`                   | Path to context file for Gemini cached content.                                                             | `None`                       | No                   |
+| `FAST_WHISPER_API_BASE_URL`               | `--fast-whisper-api-base-url`      | Base URL for the Speech-to-Text (STT) API service. Enables voice input if `TTS_BASE_URL` is also set.       | `None`                       | No                   |
+| `FAST_WHISPER_API_KEY`                    | `--fast-whisper-api-key`           | API Key for the STT service (if required).                                                                  | `None`                       | No                   |
+| `FAST_WHISPER_API_MODEL`                  | `--fast-whisper-api-model`         | Model name for the STT service.                                                                             | `None`                       | No (if STT used)     |
+| `TTS_BASE_URL`                            | `--tts-base-url`                   | Base URL for the Text-to-Speech (TTS) API service. Enables voice output if `FAST_WHISPER_API_BASE_URL` is set. | `None`                       | No                   |
+| `TTS_API_KEY`                             | `--tts-api-key`                    | API Key for the TTS service (if required).                                                                  | `None`                       | No                   |
+| `TTS_MODEL`                               | `--tts-model`                      | Model name for the TTS service.                                                                             | `None`                       | No (if TTS used)     |
+| `TTS_VOICE`                               | `--tts-voice`                      | Voice name for the TTS service.                                                                             | `None`                       | No (if TTS used)     |
+| `TTS_BACKEND`                             | `--tts-backend`                    | Backend identifier for the TTS service (if required).                                                       | `None`                       | No                   |
+| `LANGUAGE`                                | `--language`                       | Language code (e.g., `en`, `es`) for STT and TTS services.                                                  | `None`                       | No (if STT/TTS used) |
+| `TELEGRAM_GPT_EDIT_THROTTLE_INTERVAL`     | *(None)*                           | Minimum seconds between message edits during streaming response.                                            | `0.5`                        | No                   |
