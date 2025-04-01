@@ -403,6 +403,9 @@ class ChatManager:
               # Ensure the in-memory message object has the final accumulated content
               assistant_message.content = accumulated_content
 
+              if assistant_message not in conversation.messages: # Avoid duplicates if logic changes later
+                conversation.messages.append(assistant_message)
+
               # --- Final DB Update & Telegram Edit ---
               final_text_for_display_and_db = accumulated_content # Start with full content
 
