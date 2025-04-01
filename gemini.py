@@ -7,6 +7,7 @@ from google.genai import types
 from models import AssistantMessage, Conversation, Message, SystemMessage, UserMessage
 from google.api_core import exceptions as google_exceptions
 from models import RateLimitException
+from db import Database
 
 @dataclass
 class GPTOptions:
@@ -15,6 +16,7 @@ class GPTOptions:
     max_message_count: int | None = None
     system_message: str | None = None
     context_file: str | None = None
+    db: Database | None = None
 
 class GPTClient:
     def __init__(self, *, options: GPTOptions):
@@ -22,6 +24,11 @@ class GPTClient:
         self.__max_message_count = options.max_message_count
         self.__system_message = options.system_message
         self.__file = options.context_file
+        self.__db = options.db
+        if self.__db is None:
+             # Handle cases where db might not be provided if necessary
+             # For this use case, assume it's required for title saving
+             raise ValueError("Database instance is required in GPTOptions for title saving.")        
         self.__client = genai.Client(
             api_key=options.api_key
         )
@@ -56,7 +63,6 @@ class GPTClient:
     ) -> AsyncGenerator[AssistantMessage, None]:
         logging.info(f"Completing message for conversation {conversation.id}, message: '{user_message}'")
         logging.debug(f"Current conversation for chat {conversation.id}: {conversation}")
-
         assistant_message = None
         try:
             async for chunk in self.__stream(([system_message] if system_message else []) + conversation.messages):
@@ -76,34 +82,43 @@ class GPTClient:
         logging.info(f"len(conversation.messages): {len(conversation.messages)}")
 
         if conversation.title is None and assistant_message and len(conversation.messages) < 3 : # Ensure assistant message exists
-            async def set_title(conversation: Conversation):
-                prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the begining or the end.'
-                try:
-                    # Ensure messages sent to __request include the latest assistant message
-                    messages_for_title = conversation.messages # Includes User + Assistant
-                    title = await self.__request(SystemMessage(prompt), messages_for_title)
-                    title = title.strip()
-                    if title: # Avoid setting empty titles
-                        conversation.title = title
-                        logging.info(f"Set title for conversation {conversation.id}: '{title}'")
-                        # Optionally update DB here if title generation is critical path
-                        # await self.db.update_conversation(conversation.id, title) # Needs db instance passed or accessible
-                    else:
-                         logging.warning(f"Title generation for conversation {conversation.id} produced empty result.")
-                except RateLimitException:
-                    logging.warning(f"Rate limit hit during title generation for {conversation.id}. Title not set.")
-                    # Don't raise here, title is non-critical
-                except Exception as title_e:
-                    logging.error(f"Error generating title for conversation {conversation.id}: {title_e}")
-                    # Don't raise here, title is non-critical
-
-            # It seems title generation wasn't awaited properly before.
-            # Consider awaiting it if the title *must* be set before __complete returns,
-            # otherwise keep as create_task for background execution.
-            # await set_title(conversation)
-            asyncio.create_task(set_title(conversation)) # If background is okay
+            asyncio.create_task(self.__set_title(conversation, self.__db))
 
         logging.info(f"Completed message for chat {conversation.id}, message: '{assistant_message}'")
+
+    # --- Make set_title an instance method, accept db ---
+    async def __set_title(self, conversation: Conversation, db: Database):
+        # Check again inside task in case state changed
+        if conversation.title is not None:
+             return # Already has a title
+
+        logging.info(f"Attempting to generate title for conversation {conversation.id}")
+        prompt = 'You are a title generator. You will receive one or multiple messages of a conversation. You will reply with only the title of the conversation without any punctuation mark either at the begining or the end.'
+        try:
+            # Ensure messages sent to __request include the latest available message content
+            # Need at least the user message. If assistant started, include that too.
+            messages_for_title = conversation.messages[:2] # Use first 1 or 2 messages
+            if not messages_for_title:
+                 logging.warning(f"Not enough messages to generate title for conversation {conversation.id}")
+                 return
+
+            title = await self.__request(SystemMessage(prompt), messages_for_title)
+            title = title.strip()
+
+            if title: # Avoid setting empty titles
+                logging.info(f"Generated title for conversation {conversation.id}: '{title}'")
+                conversation.title = title # Update in-memory object
+                # --- Save to DB ---
+                await db.update_conversation(conversation.id, title)
+                # ------------------
+            else:
+                 logging.warning(f"Title generation for conversation {conversation.id} produced empty/invalid result.")
+        except RateLimitException:
+            logging.warning(f"Rate limit hit during title generation for {conversation.id}. Title not set.")
+            # Don't raise here, title is non-critical
+        except Exception as title_e:
+            logging.error(f"Error generating title for conversation {conversation.id}: {title_e}")
+            # Don't raise here, title is non-critical
 
     def new_conversation(self, conversation_id: int, user_message: UserMessage) -> Conversation:
         conversation = Conversation(conversation_id, None, user_message.timestamp, [user_message])

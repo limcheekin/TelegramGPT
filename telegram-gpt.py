@@ -4,6 +4,7 @@ import os
 from bot import BotOptions, WebhookOptions, run
 from gemini import GPTClient, GPTOptions
 from speech import SpeechClient
+from db import Database
 
 logging.basicConfig(
   format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -159,14 +160,38 @@ if __name__ == "__main__":
     help="TTS backend supported by the LocalAI",
   )
   args = parser.parse_args()
+
+  # --- Database Setup ---
+  # Use an environment variable for the DSN
+  postgres_dsn = os.environ.get('POSTGRES_DSN')
+  if not postgres_dsn:
+      # Fallback or raise error if persistence is mandatory
+      # For example, using SQLite in memory for testing if DSN not set
+      # postgres_dsn = "sqlite+aiosqlite:///:memory:"
+      # logging.warning("POSTGRES_DSN not set, using in-memory SQLite DB. Data will not persist.")
+      # OR
+      raise ValueError("POSTGRES_DSN environment variable must be set for database persistence.")
+
+  db = Database(postgres_dsn)
+  # ----------------------
+  #   
   if args.system_message_file:
     with open(args.system_message_file, "r", encoding="utf-8") as file:
       system_message = file.read()
   else:
     system_message = ""
 
-  gpt_options = GPTOptions(args.openai_api_key, args.openai_model_name, 
-                           args.max_message_count, system_message, args.context_file)
+  # --- Instantiate GPTOptions, passing db ---
+  gpt_options = GPTOptions(
+      api_key=args.openai_api_key,
+      model_name=args.openai_model_name,
+      max_message_count=args.max_message_count,
+      system_message=system_message,
+      context_file=args.context_file,
+      db=db # Pass the initialized db instance
+  )
+  # -----------------------------------------
+
   logging.info(f"Initializing GPTClient with options: {gpt_options}")
   gpt = GPTClient(options=gpt_options)
 
@@ -186,4 +211,4 @@ if __name__ == "__main__":
   bot_options = BotOptions(args.telegram_token, set(args.chat_id), args.conversation_timeout, args.data_dir, webhook_options)
   logging.info(f"Starting bot with options: {bot_options}")
 
-  run(args.telegram_token, gpt, speech, bot_options)
+  run(args.telegram_token, gpt, speech, bot_options, db)

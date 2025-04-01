@@ -202,6 +202,12 @@ class BotOptions:
 
 def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dict[int, asyncio.Task], allowed_chat_ids: set[int], 
                       conversation_timeout: int|None, chat_states: dict[int, ChatState], callback, db: Database):
+  if not db:
+      # This should ideally not happen if run() sets it correctly
+      logging.error("Database instance not available in callback creator.")
+      # You might want to raise an exception or handle this gracefully
+      raise RuntimeError("Database not initialized before creating callback.")
+  
   async def invoke(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if chat_id not in chat_states:
       chat_states[chat_id] = ChatState()
@@ -250,10 +256,9 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
 
   return handler
 
-def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptions):
+def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptions, db: Database):
   chat_tasks = {}
   chat_states = {}
-  db: Database = None
 
   def create_callback(callback):
     return __create_callback(gpt, speech, chat_tasks, options.allowed_chat_ids, 
@@ -274,11 +279,7 @@ def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptio
   async def post_shutdown(_: Application):
     if speech:
       await speech.close()
-
-  postgres_dsn = os.environ.get('POSTGRES_DSN')  # e.g., "postgresql+asyncpg://user:pass@host:port/dbname"
-  if not postgres_dsn:
-    raise Exception("POSTGRES_DSN environment variable must be set for PostgreSQL persistence")
-  db = Database(postgres_dsn)
+    await db.engine.dispose()  
   
   app_builder = ApplicationBuilder().token(token).post_init(post_init).post_shutdown(post_shutdown)
   #if options.data_dir:
