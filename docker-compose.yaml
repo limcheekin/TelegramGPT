@@ -1,24 +1,29 @@
 services:
   telegram-gpt:
-    build: .
+    # build docker image locally
+    # build: .
+    # build docker image from github repo
+    build:
+      context: https://github.com/limcheekin/TelegramGPT.git
     container_name: telegram-gpt
     restart: unless-stopped
     volumes:
-      - telegram-gpt:/data
+      - /home/username/docker/volumes/system_prompt.md:/data/system_prompt.md:ro
+      - /home/username/docker/volumes/context_file.txt:/data/context_file.txt:ro
     environment:
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
-      TELEGRAM_GPT_OPENAI_API_KEY: ${TELEGRAM_GPT_OPENAI_API_KEY}
-      TELEGRAM_GPT_OPENAI_MODEL_NAME: ${TELEGRAM_GPT_OPENAI_MODEL_NAME}
-      TELEGRAM_GPT_TELEGRAM_TOKEN: ${TELEGRAM_GPT_TELEGRAM_TOKEN}
-      FAST_WHISPER_API_BASE_URL: ${FAST_WHISPER_API_BASE_URL}
-      FAST_WHISPER_API_KEY: ${FAST_WHISPER_API_KEY}
-      FAST_WHISPER_API_MODEL: ${FAST_WHISPER_API_MODEL}
-      TTS_BASE_URL: ${TTS_BASE_URL}
-      TTS_API_KEY: ${TTS_API_KEY}
-      TTS_MODEL: ${TTS_MODEL}
-      TTS_VOICE: ${TTS_VOICE}
-      TTS_BACKEND: ${TTS_BACKEND}
-      LANGUAGE: ${LANGUAGE}
-
-volumes:
-  telegram-gpt:
+      - 'OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}'
+      - 'TELEGRAM_GPT_OPENAI_API_KEY=${TELEGRAM_GPT_OPENAI_API_KEY}'
+      - 'TELEGRAM_GPT_OPENAI_MODEL_NAME=${TELEGRAM_GPT_OPENAI_MODEL_NAME:-gemini-1.5-flash-002}'
+      - 'TELEGRAM_GPT_TELEGRAM_TOKEN=${TELEGRAM_GPT_TELEGRAM_TOKEN}'
+      - 'TELEGRAM_GPT_SYSTEM_MESSAGE_FILE=${TELEGRAM_GPT_SYSTEM_MESSAGE_FILE:-/data/system_prompt.md}' 
+      - 'TELEGRAM_GPT_CONTEXT_FILE=${TELEGRAM_GPT_CONTEXT_FILE:-/data/context_file.txt}'
+      - 'FAST_WHISPER_API_BASE_URL=${FAST_WHISPER_API_BASE_URL:-https://api.groq.com/openai/v1}'
+      - 'FAST_WHISPER_API_KEY=${FAST_WHISPER_API_KEY}'
+      - 'FAST_WHISPER_API_MODEL=${FAST_WHISPER_API_MODEL:-whisper-large-v3-turbo}'
+      - 'LANGUAGE=${LANGUAGE:-en}'
+      - 'TTS_BASE_URL=${TTS_BASE_URL:-https://edgetts.api.com/v1}'
+      - 'TTS_API_KEY=${TTS_API_KEY}'
+      - 'TTS_MODEL=${TTS_MODEL:-tts-1-hd}'
+      - 'TTS_VOICE=${TTS_VOICE:-en-US-EmmaMultilingualNeural}'
+      - 'TTS_BACKEND=${TTS_BACKEND:-edgetts}'
+      - 'POSTGRES_DSN=${POSTGRES_DSN:-postgresql+asyncpg://postgres:password@host:5432/database}'
