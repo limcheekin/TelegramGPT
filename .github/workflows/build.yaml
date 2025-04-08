@@ -6,7 +6,8 @@ on:
       platform:
         required: true
         description: Specify the platform supported
-
+        type: string
+        
   workflow_dispatch:
     inputs:
       platform:
