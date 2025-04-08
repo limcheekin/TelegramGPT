@@ -11,7 +11,8 @@ jobs:
     uses: ./.github/workflows/build.yaml
     with:
       platform: 'linux/arm64'
-    
+    secrets:
+      TOKEN: ${{ secrets.TOKEN }}    
   deploy:
     needs: build
     runs-on: ubuntu-latest

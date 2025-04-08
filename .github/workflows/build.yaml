@@ -7,7 +7,10 @@ on:
         required: true
         description: Specify the platform supported
         type: string
-        
+    secrets:
+      TOKEN:
+        required: true
+                
   workflow_dispatch:
     inputs:
       platform:
