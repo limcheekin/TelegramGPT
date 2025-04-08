@@ -1,12 +1,13 @@
 # For more details, read this: https://coolify.io/docs/github-actions
 name: Build Docker Image
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       platform:
         required: true
         description: Specify the platform supported
-        default: 'linux/amd64'
+        default: 'linux/arm64'
         type: choice
         options:
           - linux/amd64
