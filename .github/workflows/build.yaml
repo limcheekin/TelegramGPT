@@ -25,7 +25,7 @@ env:
 
 jobs:
   build:
-    runs-on: ${{ github.event.inputs.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
@@ -33,7 +33,7 @@ jobs:
       - name: Show Runner
         run: |
           echo "Running on runner: $(uname -a)"
-          echo "Platform input: ${{ github.event.inputs.platform }}"
+          echo "Platform input: ${{ inputs.platform }}"
 
       - uses: actions/checkout@v4
       - name: Login to ghcr.io
@@ -45,7 +45,7 @@ jobs:
       - name: Replace slash with dash
         id: replace_slash
         run: |
-          platform_value="${{ github.event.inputs.platform }}"
+          platform_value="${{ inputs.platform }}"
           replaced_value="${platform_value//\//-}"
           echo "REPLACED_PLATFORM=$replaced_value" >> $GITHUB_ENV
       - name: Build image and push to registry
@@ -53,6 +53,6 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          platforms: ${{ github.event.inputs.platform }}
+          platforms: ${{ inputs.platform }}
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.REPLACED_PLATFORM }}:latest
