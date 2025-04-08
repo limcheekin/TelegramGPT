@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/build.yaml
+    with:
+      platform: linux/arm64
     
   deploy:
     needs: build

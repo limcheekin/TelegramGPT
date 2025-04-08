@@ -5,8 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       platform:
+        required: true
         description: Specify the platform supported
-        default: 'linux/arm64'
+        default: 'linux/amd64'
         type: choice
         options:
           - linux/amd64
