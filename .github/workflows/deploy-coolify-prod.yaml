@@ -1,0 +1,32 @@
+# For more details, read this: https://coolify.io/docs/github-actions
+name: Deploy to Coolify Production
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        required: true
+        description: Specify the platform supported
+        default: 'linux/amd64'
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
+      webhook_url:
+        required: true
+        description: Specify the Deploy Webhook URL of the service
+        type: string
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yaml
+    with:
+      platform: ${{ inputs.platform }}
+    secrets:
+      TOKEN: ${{ secrets.TOKEN }}    
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Coolify
+        run: | 
+          curl --request GET '${{ inputs.webhook_url }}' --header 'Authorization: Bearer ${{ secrets.COOLIFY_TOKEN_PROD }}'
