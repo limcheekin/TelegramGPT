@@ -2,6 +2,11 @@
 name: Build Docker Image
 on:
   workflow_call:
+    inputs:
+      platform:
+        required: true
+        description: Specify the platform supported
+
   workflow_dispatch:
     inputs:
       platform:
