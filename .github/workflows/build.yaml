@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "Running on runner: $(uname -a)"
           echo "Platform input: ${{ github.event.inputs.platform }}"
-              
+
       - uses: actions/checkout@v4
       - name: Login to ghcr.io
         uses: docker/login-action@v3
@@ -40,7 +40,7 @@ jobs:
         run: |
           platform_value="${{ github.event.inputs.platform }}"
           replaced_value="${platform_value//\//-}"
-          echo "::set-output name=replaced_platform::$replaced_value"
+          echo "REPLACED_PLATFORM=$replaced_value" >> $GITHUB_ENV
       - name: Build image and push to registry
         uses: docker/build-push-action@v6
         with:
@@ -48,4 +48,4 @@ jobs:
           file: Dockerfile
           platforms: ${{ github.event.inputs.platform }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ steps.replace_slash.outputs.replaced_platform }}:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.REPLACED_PLATFORM }}:latest
