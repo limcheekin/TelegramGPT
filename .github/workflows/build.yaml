@@ -41,7 +41,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.TOKEN  }}
+          password: ${{ secrets.TOKEN }}
       - name: Replace slash with dash
         id: replace_slash
         run: |
