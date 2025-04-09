@@ -6,14 +6,16 @@ from dataclasses import dataclass, field
 from enum import Enum
 from gemini import GPTClient
 from speech import SpeechClient
-from telegram import Update, ParseMode
+from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, ConversationHandler, filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler
 from telegram.warnings import PTBUserWarning
+from telegram.constants import ParseMode
 from typing import cast
 from uuid import uuid4
 from warnings import filterwarnings
 from db import Database
 from models import Conversation
+
 
 async def __start(_: Update, chat_manager: ChatManager):
   chat_id = chat_manager.context.chat_id
