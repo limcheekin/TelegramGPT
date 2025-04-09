@@ -32,4 +32,4 @@ jobs:
           WEBHOOK_URL: ${{ inputs.webhook_url }}      
         run: | 
           echo "::add-mask::$WEBHOOK_URL"
-          curl --request GET '$WEBHOOK_URL' --header 'Authorization: Bearer ${{ secrets.COOLIFY_TOKEN_PROD }}'
+          curl --request GET "$WEBHOOK_URL" --header 'Authorization: Bearer ${{ secrets.COOLIFY_TOKEN_PROD }}'
