@@ -105,29 +105,36 @@ if __name__ == "__main__":
     default=os.environ.get('TELEGRAM_GPT_CONTEXT_FILE'),
     help="Context file for cached content"
   )
+
   parser.add_argument(
-    '--fast-whisper-api-base-url',
+    '--stt-base-url',
     type=str,
-    default=os.environ.get('FAST_WHISPER_API_BASE_URL'),
-    help="Base URL of the FastWhisperAPI, for example http://127.0.0.1:8000",
+    default=os.environ.get('STT_BASE_URL'),
+    help="Base URL of the STT API, for example http://127.0.0.1:8000",
   )
   parser.add_argument(
-    '--fast-whisper-api-model',
+    '--stt-model',
     type=str,
-    default=os.environ.get('FAST_WHISPER_API_MODEL'),
-    help="Model supported by the FastWhisperAPI such as tiny.en, tiny, base.en, base, small.en, small, medium.en, medium, large-v1, large-v2, large-v3, large-v3-turbo, large, distil-large-v2, distil-medium.en, distil-small.en, distil-large-v3",
+    default=os.environ.get('STT_MODEL'),
+    help="Model supported by the STT such as whisper-base, whisper-large-v3-turbo, whisper-large-v3, etc.",
   )
   parser.add_argument(
-    '--fast-whisper-api-key',
+    '--stt-api-key',
     type=str,
-    default=os.environ.get('FAST_WHISPER_API_KEY'),
-    help="API key of the FastWhisperAPI",
+    default=os.environ.get('STT_API_KEY'),
+    help="API key of the STT API",
+  )
+  parser.add_argument(
+    '--stt-response-format',
+    type=str,
+    default=os.environ.get('STT_RESPONSE_FORMAT'),
+    help="Response format of the STT API",
   )
   parser.add_argument(
     '--language',
     type=str,
     default=os.environ.get('LANGUAGE'),
-    help="Language of the FastWhisperAPI and TTS",
+    help="Language of the STT and TTS",
   )
   parser.add_argument(
     '--tts-base-url',
@@ -159,6 +166,12 @@ if __name__ == "__main__":
     default=os.environ.get('TTS_BACKEND'),
     help="TTS backend supported by the LocalAI",
   )
+  parser.add_argument(
+    '--tts-audio-format',
+    type=str,
+    default=os.environ.get('TTS_AUDIO_FORMAT'),
+    help="TTS audio format such as mp3, wav, pcm, etc.",
+  )  
   args = parser.parse_args()
 
   # --- Database Setup ---
@@ -196,16 +209,17 @@ if __name__ == "__main__":
   gpt = GPTClient(options=gpt_options)
 
   speech = SpeechClient(
-            fastwhisperapi_base_url=args.fast_whisper_api_base_url,
-            fastwhisperapi_key=args.fast_whisper_api_key,
-            fastwhisperapi_model=args.fast_whisper_api_model,
-            checked_fastwhisperapi=True,
+            stt_base_url=args.stt_base_url,
+            stt_api_key=args.stt_api_key, 
+            stt_model=args.stt_model,
+            stt_response_format=args.stt_response_format,  
             tts_base_url=args.tts_base_url,
             tts_api_key=args.tts_api_key,
             tts_model=args.tts_model,
             tts_voice=args.tts_voice,
             tts_backend=args.tts_backend,
-            language=args.language) if args.fast_whisper_api_base_url is not None and args.tts_base_url is not None else None
+            tts_audio_format=args.tts_audio_format,
+            language=args.language) if args.stt_base_url is not None and args.tts_base_url is not None else None
 
   webhook_options = WebhookOptions(args.webhook_url, args.webhook_listen_address) if args.webhook_url is not None else None
   bot_options = BotOptions(args.telegram_token, set(args.chat_id), args.conversation_timeout, args.data_dir, webhook_options)

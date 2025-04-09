@@ -222,6 +222,7 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
     chat_data = cast(ChatData, context.chat_data)
     chat_context = ChatContext(chat_id, chat_state, chat_data)
 
+    logging.info(f"speech {speech}")
     chat_manager = ChatManager(gpt=gpt, speech=speech, bot=context.bot, context=chat_context, 
                                conversation_timeout=conversation_timeout, db=db)
 
@@ -277,8 +278,6 @@ def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptio
     await db.init_db()
 
   async def post_shutdown(_: Application):
-    if speech:
-      await speech.close()
     await db.engine.dispose()  
   
   app_builder = ApplicationBuilder().token(token).post_init(post_init).post_shutdown(post_shutdown)
