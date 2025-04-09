@@ -94,6 +94,12 @@ if __name__ == "__main__":
     help="Azure OpenAI Service endpoint. Set this option to use Azure OpenAI Service instead of OpenAI API."
   )
   parser.add_argument(
+    '--start-message-file',
+    type=str,
+    default=os.environ.get('TELEGRAM_GPT_START_MESSAGE_FILE'),
+    help="File specified start message of the bot"
+  )  
+  parser.add_argument(
     '--system-message-file',
     type=str,
     default=os.environ.get('TELEGRAM_GPT_SYSTEM_MESSAGE_FILE'),
@@ -194,6 +200,12 @@ if __name__ == "__main__":
   else:
     system_message = ""
 
+  if args.start_message_file:
+    with open(args.start_message_file, "r", encoding="utf-8") as file:
+      start_message = file.read()
+  else:
+    start_message = "Hello! How can I help you today?"
+
   # --- Instantiate GPTOptions, passing db ---
   gpt_options = GPTOptions(
       api_key=args.openai_api_key,
@@ -222,7 +234,8 @@ if __name__ == "__main__":
             language=args.language) if args.stt_base_url is not None and args.tts_base_url is not None else None
 
   webhook_options = WebhookOptions(args.webhook_url, args.webhook_listen_address) if args.webhook_url is not None else None
-  bot_options = BotOptions(args.telegram_token, set(args.chat_id), args.conversation_timeout, args.data_dir, webhook_options)
+  bot_options = BotOptions(args.telegram_token, set(args.chat_id), args.conversation_timeout, 
+                           args.data_dir, webhook_options, start_message)
   logging.info(f"Starting bot with options: {bot_options}")
 
   run(args.telegram_token, gpt, speech, bot_options, db)

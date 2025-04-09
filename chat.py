@@ -77,21 +77,21 @@ DEFAULT_EDIT_THROTTLE_INTERVAL_SECONDS = 0.5
 
 class ChatManager:
   def __init__(self, *, gpt: GPTClient, speech: SpeechClient|None, bot: ExtBot, 
-               context: ChatContext, conversation_timeout: int|None, db: Database):
+               context: ChatContext, conversation_timeout: int|None, db: Database, 
+               start_message: str):
     self.__gpt = gpt
     self.__speech = speech
     self.bot = bot
     self.context = context
     self.__conversation_timeout = conversation_timeout
     self.db = db
+    self.start_message = start_message
     # Get throttle interval from env var or use default
     try:
         self.__edit_throttle_interval = float(os.environ.get('TELEGRAM_GPT_EDIT_THROTTLE_INTERVAL', DEFAULT_EDIT_THROTTLE_INTERVAL_SECONDS))
     except ValueError:
         self.__edit_throttle_interval = DEFAULT_EDIT_THROTTLE_INTERVAL_SECONDS
     logging.info(f"Using Telegram edit throttle interval: {self.__edit_throttle_interval}s")
-
-
 
   async def new_conversation(self):
     chat_state = self.context.chat_state

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from gemini import GPTClient
 from speech import SpeechClient
-from telegram import Update
+from telegram import Update, ParseMode
 from telegram.ext import Application, CallbackQueryHandler, ConversationHandler, filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler
 from telegram.warnings import PTBUserWarning
 from typing import cast
@@ -18,7 +18,9 @@ from models import Conversation
 async def __start(_: Update, chat_manager: ChatManager):
   chat_id = chat_manager.context.chat_id
 
-  await chat_manager.bot.send_message(chat_id=chat_id, text="Start by sending me a message!")
+  await chat_manager.bot.send_message(chat_id=chat_id, 
+                                      text=chat_manager.start_message,
+                                      parse_mode=ParseMode.MARKDOWN_V2)
 
   logging.info(f"Start command executed for chat {chat_id}")
 
@@ -199,9 +201,11 @@ class BotOptions:
   conversation_timeout: int|None = None
   data_dir: str|None = None
   webhook: WebhookOptions|None = None
+  start_message: str|None = None
 
 def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dict[int, asyncio.Task], allowed_chat_ids: set[int], 
-                      conversation_timeout: int|None, chat_states: dict[int, ChatState], callback, db: Database):
+                      conversation_timeout: int|None, chat_states: dict[int, ChatState], callback, 
+                      db: Database, start_message: str):
   if not db:
       # This should ideally not happen if run() sets it correctly
       logging.error("Database instance not available in callback creator.")
@@ -224,7 +228,8 @@ def __create_callback(gpt: GPTClient, speech: SpeechClient|None, chat_tasks: dic
 
     logging.info(f"speech {speech}")
     chat_manager = ChatManager(gpt=gpt, speech=speech, bot=context.bot, context=chat_context, 
-                               conversation_timeout=conversation_timeout, db=db)
+                               conversation_timeout=conversation_timeout, db=db,
+                               start_message=start_message)
 
     return await callback(update, chat_manager)
 
@@ -263,7 +268,8 @@ def run(token: str, gpt: GPTClient, speech: SpeechClient|None, options: BotOptio
 
   def create_callback(callback):
     return __create_callback(gpt, speech, chat_tasks, options.allowed_chat_ids, 
-                             options.conversation_timeout, chat_states, callback, db)
+                             options.conversation_timeout, chat_states, callback, db, 
+                             options.start_message)
 
   async def post_init(app: Application):
     commands = [

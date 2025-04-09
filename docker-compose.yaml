@@ -8,6 +8,7 @@ services:
     container_name: telegram-gpt
     restart: unless-stopped
     volumes:
+      - /home/username/docker/volumes/start.md:/data/start.md:ro
       - /home/username/docker/volumes/system_prompt.md:/data/system_prompt.md:ro
       - /home/username/docker/volumes/context_file.txt:/data/context_file.txt:ro
     environment:
@@ -15,6 +16,7 @@ services:
       - 'TELEGRAM_GPT_OPENAI_API_KEY=${TELEGRAM_GPT_OPENAI_API_KEY}'
       - 'TELEGRAM_GPT_OPENAI_MODEL_NAME=${TELEGRAM_GPT_OPENAI_MODEL_NAME:-gemini-1.5-flash-002}'
       - 'TELEGRAM_GPT_TELEGRAM_TOKEN=${TELEGRAM_GPT_TELEGRAM_TOKEN}'
+      - 'TELEGRAM_GPT_START_MESSAGE_FILE=${TELEGRAM_GPT_START_MESSAGE_FILE:-/data/start.md}'
       - 'TELEGRAM_GPT_SYSTEM_MESSAGE_FILE=${TELEGRAM_GPT_SYSTEM_MESSAGE_FILE:-/data/system_prompt.md}' 
       - 'TELEGRAM_GPT_CONTEXT_FILE=${TELEGRAM_GPT_CONTEXT_FILE:-/data/context_file.txt}'
       - 'STT_BASE_URL=${STT_BASE_URL:-https://api.groq.com/openai/v1}'
