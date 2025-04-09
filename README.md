@@ -240,11 +240,17 @@ Refer to the official [Telegram Bot Webhook Guide](https://core.telegram.org/bot
 ### Support Voice Messages with Custom STT/TTS
 
 This bot uses external, potentially self-hosted, services for voice processing, configured via environment variables:
+STT_BASE_URL="http://192.168.1.111:8882/v1"
+STT_API_KEY="sk-1"
+STT_MODEL="large-v3-turbo"
+STT_RESPONSE_FORMAT="verbose_json"
+LANGUAGE="en"
 
 1.  **Speech-to-Text (STT):**
-    *   `FAST_WHISPER_API_BASE_URL`: Base URL of your STT service (e.g., `http://192.168.1.100:8000`). Must be compatible with OpenAI's transcription API format.
-    *   `FAST_WHISPER_API_KEY`: API key for the STT service (optional, depends on the service).
-    *   `FAST_WHISPER_API_MODEL`: The specific STT model to use (e.g., `base`, `small`, `medium`).
+    *   `STT_BASE_URL`: Base URL of your STT service (e.g., `http://192.168.1.100:8000`). Must be compatible with OpenAI's transcription API format.
+    *   `STT_API_KEY`: API key for the STT service (optional, depends on the service).
+    *   `STT_MODEL`: The specific STT model to use (e.g., `whisper-base`, `small`, `medium`, `large-v3-turbo`).
+    *   `STT_RESPONSE_FORMAT`: Response format expected from the STT service (default to `verbose_json`).
     *   `LANGUAGE`: Language code (e.g., `en`, `es`) used for STT.
 
 2.  **Text-to-Speech (TTS):**
@@ -253,9 +259,10 @@ This bot uses external, potentially self-hosted, services for voice processing, 
     *   `TTS_MODEL`: The specific TTS model/engine name recognized by your service.
     *   `TTS_VOICE`: The specific voice name recognized by your service.
     *   `TTS_BACKEND`: Specific backend identifier if required by your TTS service (e.g., some LocalAI setups).
+    *   `TTS_AUDIO_FORMAT`: Audio format expected from the TTS service (default to `mp3`).
     *   `LANGUAGE`: Language code (e.g., `en`, `es`) used for TTS.
 
-If both `FAST_WHISPER_API_BASE_URL` and `TTS_BASE_URL` are provided, voice support is enabled.
+If both `STT_BASE_URL` and `TTS_BASE_URL` are provided, voice support is enabled.
 
 ### Use a Different Gemini Model
 
