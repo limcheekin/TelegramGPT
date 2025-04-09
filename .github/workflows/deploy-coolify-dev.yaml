@@ -1,8 +1,8 @@
 # For more details, read this: https://coolify.io/docs/github-actions
 name: Deploy to Coolify DEV
 on:
-  push:
-    branches: ["main"]
+#  push:
+#    branches: ["main"]
   workflow_dispatch:
 
 
