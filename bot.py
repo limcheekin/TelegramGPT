@@ -10,7 +10,6 @@ from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, ConversationHandler, filters, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler
 from telegram.warnings import PTBUserWarning
 from telegram.constants import ParseMode
-from telegram.helpers import escape_markdown
 from typing import cast
 from uuid import uuid4
 from warnings import filterwarnings
@@ -22,7 +21,7 @@ async def __start(_: Update, chat_manager: ChatManager):
   chat_id = chat_manager.context.chat_id
 
   await chat_manager.bot.send_message(chat_id=chat_id, 
-                                      text=escape_markdown(chat_manager.start_message, version=2),
+                                      text=chat_manager.start_message,
                                       parse_mode=ParseMode.MARKDOWN_V2)
 
   logging.info(f"Start command executed for chat {chat_id}")
