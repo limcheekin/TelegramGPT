@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI
 from io import BytesIO
+import logging
 
 class SpeechClient:
   def __init__(self,  
@@ -14,6 +15,7 @@ class SpeechClient:
                tts_backend: str,
                tts_audio_format: str,
                language: str = 'en'):
+    logging.info(f"language {language}")
     self.__stt_model = stt_model
     self.__stt_response_format = stt_response_format
     self.__language = language
