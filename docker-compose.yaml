@@ -23,7 +23,7 @@ services:
       - 'STT_API_KEY=${STT_API_KEY}'
       - 'STT_MODEL=${STT_MODEL:-whisper-large-v3-turbo}'
       - 'STT_RESPONSE_FORMAT=${STT_RESPONSE_FORMAT:-verbose_json}'
-      - 'LANGUAGE=${LANGUAGE:-en}'
+      - 'LANGUAGE=${STT_TTS_LANGUAGE:-en}'
       - 'TTS_BASE_URL=${TTS_BASE_URL:-https://edgetts.api.com/v1}'
       - 'TTS_API_KEY=${TTS_API_KEY}'
       - 'TTS_MODEL=${TTS_MODEL:-tts-1-hd}'
