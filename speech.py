@@ -37,7 +37,7 @@ class SpeechClient:
           language=self.__language,
           response_format=self.__stt_response_format,
       )
-      return response.text
+      return response.text.lstrip()
 
   async def text_to_speech(self, text: str) -> bytes:
     response = await self.__tts_client.audio.speech.create(
