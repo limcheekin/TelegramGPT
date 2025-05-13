@@ -17,6 +17,7 @@ class GPTOptions:
     system_message: str | None = None
     context_file: str | None = None
     db: Database | None = None
+    implicit_caching: int | None = None
 
 class GPTClient:
     def __init__(self, *, options: GPTOptions):
@@ -24,6 +25,7 @@ class GPTClient:
         self.__max_message_count = options.max_message_count
         self.__system_message = options.system_message
         self.__file = options.context_file
+        self.__implicit_caching = options.implicit_caching
         self.__db = options.db
         if self.__db is None:
              # Handle cases where db might not be provided if necessary
@@ -32,8 +34,10 @@ class GPTClient:
         self.__client = genai.Client(
             api_key=options.api_key
         )
-        if self.__system_message and self.__file:
+        if self.__system_message and self.__file and not self.__implicit_caching:
             self.__create_cache_content()
+        elif self.__file and self.__implicit_caching:
+            self.__context_file_content = open(self.__file, 'r').read()    
 
     def __create_cache_content(self):
         document = self.__client.files.upload(file=self.__file)
@@ -154,7 +158,7 @@ class GPTClient:
 
     async def __stream(self, messages: list[Message]) -> AsyncGenerator[str, None]:
         try:
-            if self.__system_message and self.__file:
+            if self.__system_message and self.__file and not self.__implicit_caching:
                 try:
                     # Check cache content
                     self.__client.caches.get(name=self.__cached_content.name)
@@ -174,20 +178,54 @@ class GPTClient:
                     #top_p=0.5,
                     temperature=0.0,
                 )
+                async for chunk in await self.__client.aio.models.generate_content_stream(
+                    model=self.__model_name,
+                    contents=[
+                            types.Content(
+                                role=message.role.value,
+                                parts=[types.Part.from_text(text=message.content)]
+                            )
+                            for message in messages
+                        ],
+                    config=config
+                ):
+                    yield chunk.text
+
             else:
-                config = types.GenerateContentConfig(max_output_tokens=1024)    
-            async for chunk in await self.__client.aio.models.generate_content_stream(
-                model=self.__model_name,
-                contents=[
-                        types.Content(
-                            role=message.role.value,
-                            parts=[types.Part.from_text(text=message.content)]
-                        )
-                        for message in messages
-                    ],
-                config=config
-            ):
-                yield chunk.text
+                config = types.GenerateContentConfig(
+                    max_output_tokens=1024,
+                    temperature=0.0,
+                )
+                initial_contents = [
+                    types.Content(
+                        role="system",
+                        parts=[types.Part.from_text(text=self.__system_message)]
+                    ),
+                   # types.Content(
+                   #     role="user",
+                   #     parts=[types.Part.from_text(text=self.__context_file_content)]
+                   # ),
+                ]
+
+                # Create the list of contents from messages using a list comprehension
+                message_contents = [
+                    types.Content(
+                        role=message.role.value,
+                        parts=[types.Part.from_text(text=message.content)]
+                    )
+                    for message in messages
+                ]
+
+                # Concatenate the two lists
+                contents = initial_contents + message_contents  
+                logging.info(f"implicit caching contents: {contents}")
+                async for chunk in await self.__client.aio.models.generate_content_stream(
+                    model=self.__model_name,
+                    contents=contents,
+                    config=config
+                ):
+                    logging.info(f"implicit caching chunk: {chunk}")
+                    yield chunk.text
         except google_exceptions.ResourceExhausted as e:
             logging.warning(f"Google API rate limit/quota exceeded in __stream: {e}")
             raise RateLimitException(original_exception=e) from e                

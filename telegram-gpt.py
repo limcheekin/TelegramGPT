@@ -111,6 +111,12 @@ if __name__ == "__main__":
     default=os.environ.get('TELEGRAM_GPT_CONTEXT_FILE'),
     help="Context file for cached content"
   )
+  parser.add_argument(
+    '--gemini-implicit-caching',
+    type=int,
+    default=int(os.environ.get('TELEGRAM_GPT_GEMINI_IMPLICIT_CACHING')) if 'TELEGRAM_GPT_GEMINI_IMPLICIT_CACHING' in os.environ else None,
+    help="0: Disable, 1: Enable Gemini 2.5 implicit caching"
+  )
 
   parser.add_argument(
     '--stt-base-url',
@@ -213,6 +219,7 @@ if __name__ == "__main__":
       max_message_count=args.max_message_count,
       system_message=system_message,
       context_file=args.context_file,
+      implicit_caching=args.gemini_implicit_caching,
       db=db # Pass the initialized db instance
   )
   # -----------------------------------------
