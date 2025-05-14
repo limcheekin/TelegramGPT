@@ -4,7 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from gemini import GPTClient
-from models import AssistantMessage, Conversation, Role, SystemMessage, UserMessage, RateLimitException
+from models import AssistantMessage, ModelMessage, Conversation, Role, SystemMessage, UserMessage, RateLimitException
 from speech import SpeechClient
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ExtBot
@@ -361,7 +361,10 @@ class ChatManager:
               accumulated_content = chunk_message.content # Assumes chunk_message has cumulative content
 
               if not assistant_message:
-                  assistant_message = AssistantMessage(chunk_message.id, '', chunk_message.replied_to_id)
+                  if isinstance(chunk_message, AssistantMessage):
+                    assistant_message = AssistantMessage(chunk_message.id, '', chunk_message.replied_to_id)
+                  else: 
+                    assistant_message = ModelMessage(chunk_message.id, '', chunk_message.replied_to_id)
                   # Add to conversation object immediately if needed elsewhere,
                   # but primary state is now accumulated_content
                   # conversation.messages.append(assistant_message) # Optional: only if needed before stream ends

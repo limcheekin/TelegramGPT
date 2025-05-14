@@ -169,7 +169,7 @@ class Database:
         
         try:
             # Validate role
-            if role not in {'user', 'assistant', 'system'}:
+            if role not in {'user', 'assistant', 'system', 'model'}:
                 raise ValueError(f"Invalid role: {role}")
 
             if close_session:

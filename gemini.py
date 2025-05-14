@@ -4,8 +4,8 @@ import logging
 from typing import AsyncGenerator, cast
 from google import genai
 from google.genai import types
-from models import AssistantMessage, Conversation, Message, SystemMessage, UserMessage
-from google.api_core import exceptions as google_exceptions
+from models import ModelMessage, Conversation, Message, SystemMessage, UserMessage
+from google.genai.errors import ClientError # google.genai.errors.ClientError
 from models import RateLimitException
 from db import Database
 
@@ -64,14 +64,14 @@ class GPTClient:
         user_message: UserMessage, 
         sent_msg_id: int, 
         system_message: SystemMessage | None
-    ) -> AsyncGenerator[AssistantMessage, None]:
+    ) -> AsyncGenerator[ModelMessage, None]:
         logging.info(f"Completing message for conversation {conversation.id}, message: '{user_message}'")
         logging.debug(f"Current conversation for chat {conversation.id}: {conversation}")
         assistant_message = None
         try:
             async for chunk in self.__stream(([system_message] if system_message else []) + conversation.messages):
                 if not assistant_message:
-                    assistant_message = AssistantMessage(sent_msg_id, '', user_message.id)
+                    assistant_message = ModelMessage(sent_msg_id, '', user_message.id)
                     conversation.messages.append(assistant_message)
 
                 assistant_message.content += chunk
@@ -149,7 +149,7 @@ class GPTClient:
                 timeout=60
             )
             return response.text or ""        
-        except google_exceptions.ResourceExhausted as e:
+        except ClientError as e:
             logging.warning(f"Google API rate limit/quota exceeded in __request: {e}")
             raise RateLimitException(original_exception=e) from e        
         except Exception as e:
@@ -195,16 +195,13 @@ class GPTClient:
                 config = types.GenerateContentConfig(
                     max_output_tokens=1024,
                     temperature=0.0,
+                    system_instruction=[self.__system_message] if self.__system_message else []
                 )
                 initial_contents = [
                     types.Content(
-                        role="system",
-                        parts=[types.Part.from_text(text=self.__system_message)]
+                        role="user",
+                        parts=[types.Part.from_text(text=self.__context_file_content)]
                     ),
-                   # types.Content(
-                   #     role="user",
-                   #     parts=[types.Part.from_text(text=self.__context_file_content)]
-                   # ),
                 ]
 
                 # Create the list of contents from messages using a list comprehension
@@ -226,7 +223,7 @@ class GPTClient:
                 ):
                     logging.info(f"implicit caching chunk: {chunk}")
                     yield chunk.text
-        except google_exceptions.ResourceExhausted as e:
+        except ClientError as e:
             logging.warning(f"Google API rate limit/quota exceeded in __stream: {e}")
             raise RateLimitException(original_exception=e) from e                
         except Exception as e:

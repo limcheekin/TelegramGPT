@@ -12,6 +12,7 @@ class RateLimitException(Exception):
 class Role(str, Enum):
   SYSTEM = 'system'
   ASSISTANT = 'assistant'
+  MODEL = 'model'
   USER = 'user'
 
 @dataclass
@@ -66,6 +67,14 @@ class AssistantMessage(Message):
 
   def __init__(self, id: int, content: str, replied_to_id: int, timestamp: datetime|None = None):
     super().__init__(id, Role.ASSISTANT, content, timestamp or datetime.now())
+    self.id = id
+    self.replied_to_id = replied_to_id
+
+class ModelMessage(Message):
+  replied_to_id: int
+
+  def __init__(self, id: int, content: str, replied_to_id: int, timestamp: datetime|None = None):
+    super().__init__(id, Role.MODEL, content, timestamp or datetime.now())
     self.id = id
     self.replied_to_id = replied_to_id
 
