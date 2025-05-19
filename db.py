@@ -5,7 +5,7 @@ from typing import Optional, List, Literal
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, joinedload
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, ForeignKey, 
+    Column, Integer, BigInteger, String, Text, DateTime, ForeignKey,
     func, select, update, event
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -17,7 +17,7 @@ Base = declarative_base()
 # region Models
 class DBConversation(Base):
     __tablename__ = 'conversations'
-    chat_id = Column(Integer, index=True, nullable=False)
+    chat_id = Column(BigInteger, index=True, nullable=False)
     id = Column(Integer, primary_key=True)
     title = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -31,7 +31,7 @@ class DBConversation(Base):
 
 class ActiveConversation(Base):
     __tablename__ = 'active_conversations'
-    chat_id = Column(Integer, primary_key=True)
+    chat_id = Column(BigInteger, primary_key=True)
     conversation_id = Column(
         Integer, 
         ForeignKey('conversations.id', ondelete="CASCADE"),
@@ -49,7 +49,7 @@ class ActiveConversation(Base):
 class DBMessage(Base):
     __tablename__ = 'messages'
     id = Column(
-        Integer, 
+        BigInteger, 
         primary_key=True,
         autoincrement=False,
         nullable=False
